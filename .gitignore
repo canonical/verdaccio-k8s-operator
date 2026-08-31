@@ -3,14 +3,18 @@ build/
 *.charm
 # charmcraft build artifacts
 parts/
+overlay/
 prime/
 stage/
 .tox/
 .coverage
+.spread-reuse.*.yaml
+htmlcov/
 __pycache__/
 *.py[cod]
-.idea
-.vscode/
 *charm.sh
-.venv
+.venv/
+.pyright/
+.pytest_cache/
+.ruff_cache/
 tmp/

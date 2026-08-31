@@ -1,0 +1,51 @@
+[project]
+name = "verdaccio-k8s"
+version = "0.1.0"
+requires-python = ">=3.10"
+dependencies = [
+    "ops~=3.7",
+    "pydantic~=2.12",
+]
+
+[dependency-groups]
+lint = [
+    "codespell",
+    "pyright",
+    "ruff",
+]
+unit = [
+    "coverage[toml]",
+    "ops[testing]",
+    "pytest",
+]
+
+[tool.coverage.run]
+branch = true
+source = ["src"]
+
+[tool.coverage.report]
+show_missing = true
+
+[tool.pytest.ini_options]
+filterwarnings = ["error"]
+log_cli = true
+log_cli_level = "INFO"
+pythonpath = ["src"]
+testpaths = ["tests/unit"]
+
+[tool.ruff]
+line-length = 99
+
+[tool.ruff.lint]
+select = ["C", "D", "E", "F", "I", "N", "W"]
+ignore = ["D105", "D107", "D203", "D213"]
+
+[tool.ruff.lint.per-file-ignores]
+"tests/*" = ["D100", "D101", "D102", "D103", "D104"]
+
+[tool.codespell]
+skip = ".git,.venv,build,./docs/tools/*,parts,prime,stage,uv.lock"
+
+[tool.pyright]
+include = ["src", "tests/unit"]
+extraPaths = ["src"]

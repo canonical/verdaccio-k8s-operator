@@ -1,0 +1,38 @@
+project: verdaccio-k8s
+
+path: /home/ubuntu/spread/verdaccio-k8s
+
+backends:
+  local:
+    type: adhoc
+    allocate: |
+      sudo rm -rf /home/ubuntu/spread/verdaccio-k8s
+      sudo sed -i 's/^\s*#\?\s*\(PermitRootLogin\|PasswordAuthentication\)\>.*/\1 yes/' /etc/ssh/sshd_config
+      if [ -d /etc/ssh/sshd_config.d ]; then
+        echo 'PasswordAuthentication yes' | sudo tee /etc/ssh/sshd_config.d/00-spread.conf
+      fi
+      echo "ubuntu:${SPREAD_PASSWORD}" | sudo chpasswd
+      sudo systemctl restart ssh
+      ADDRESS localhost
+    discard: |
+      sudo rm -rf /home/ubuntu/spread/verdaccio-k8s
+    systems:
+      - ubuntu-24.04:
+          username: ubuntu
+
+suites:
+  spread/integration/:
+    summary: Verdaccio deployment tests
+
+exclude:
+  - .git
+  - .venv
+  - .coverage
+  - .pytest_cache
+  - .ruff_cache
+  - overlay
+  - parts
+  - prime
+  - stage
+
+kill-timeout: 30m

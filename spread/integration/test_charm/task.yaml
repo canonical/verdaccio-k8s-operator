@@ -1,0 +1,51 @@
+summary: Deploy Verdaccio and verify its registry endpoint
+
+environment:
+  MODEL: "spread-$(HOST: date +%s%N)"
+  CHARM: "${SPREAD_PATH}/verdaccio-k8s_amd64.charm"
+
+prepare: |
+  chown -R ubuntu:ubuntu "${SPREAD_PATH}"
+  sudo -H -u ubuntu juju add-model "${MODEL}"
+
+execute: |
+  sudo -H -u ubuntu juju deploy \
+    --model "${MODEL}" \
+    "${CHARM}" \
+    --resource verdaccio-image=verdaccio/verdaccio:6
+  sudo -H -u ubuntu juju wait-for \
+    application verdaccio-k8s \
+    --timeout 10m
+  for _ in {1..5}; do
+    if sudo -H -u ubuntu juju ssh \
+      --model "${MODEL}" \
+      --container verdaccio \
+      verdaccio-k8s/0 \
+      wget -qO- http://127.0.0.1:4873/-/ping; then
+      exit 0
+    fi
+    sleep 1
+  done
+  exit 1
+
+debug: |
+  sudo -H -u ubuntu juju status --model "${MODEL}" --color=false
+  sudo -H -u ubuntu juju ssh \
+    --model "${MODEL}" \
+    --container verdaccio \
+    verdaccio-k8s/0 \
+    /charm/bin/pebble services
+  sudo -H -u ubuntu juju ssh \
+    --model "${MODEL}" \
+    --container verdaccio \
+    verdaccio-k8s/0 \
+    /charm/bin/pebble logs verdaccio
+
+restore: |
+  sudo -H -u ubuntu juju destroy-model \
+    --no-prompt \
+    --force \
+    --destroy-storage \
+    --no-wait \
+    --timeout=60s \
+    "${MODEL}" || true
