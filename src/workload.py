@@ -8,6 +8,8 @@ from configuration import CharmConfig
 
 CONTAINER_NAME = "verdaccio"
 SERVICE_NAME = "verdaccio"
+HEALTH_CHECK_NAME = "verdaccio-ready"
+HEALTH_CHECK_PATH = "/-/ping"
 CONFIG_PATH = "/verdaccio/conf/config.yaml"
 WORKLOAD_USER_ID = 10001
 WORKING_DIRECTORY = "/opt/verdaccio"
@@ -22,8 +24,7 @@ class WorkloadPlan:
     """Complete desired workload state."""
 
     config: str
-    command: str
-    layer: ops.pebble.LayerDict
+    layer: ops.pebble.Layer
     open_ports: frozenset[int]
 
 
@@ -43,28 +44,59 @@ def build_command(config: CharmConfig) -> str:
     )
 
 
+def _health_check_host(address: str) -> str:
+    """Resolve a wildcard listener to a container-local health-check host."""
+    if address == "0.0.0.0":
+        return "127.0.0.1"
+    if address == "::":
+        return "::1"
+    return address
+
+
+def build_health_check_url(config: CharmConfig) -> str:
+    """Build the container-local URL for Verdaccio's registry-root ping endpoint."""
+    address = _health_check_host(config.listen_address)
+    if ":" in address:
+        address = f"[{address}]"
+    return f"http://{address}:{config.listen_port}{HEALTH_CHECK_PATH}"
+
+
 def build_plan(config: CharmConfig) -> WorkloadPlan:
     """Build the complete desired workload state without side effects."""
-    command = build_command(config)
-    layer: ops.pebble.LayerDict = {
+    check: ops.pebble.CheckDict = {
+        "override": "replace",
+        "level": "ready",
+        "period": "10s",
+        "timeout": "3s",
+        "threshold": 3,
+    }
+    if config.listen_protocol == "https":
+        check["tcp"] = {
+            "host": _health_check_host(config.listen_address),
+            "port": config.listen_port,
+        }
+    else:
+        check["http"] = {"url": build_health_check_url(config)}
+
+    layer_config: ops.pebble.LayerDict = {
         "summary": "Verdaccio",
         "description": "Pebble layer for Verdaccio",
         "services": {
             SERVICE_NAME: {
                 "override": "replace",
                 "summary": "Verdaccio npm registry",
-                "command": command,
+                "command": build_command(config),
                 "startup": "enabled",
                 "user-id": WORKLOAD_USER_ID,
                 "working-dir": WORKING_DIRECTORY,
                 "environment": {"HOME": WORKING_DIRECTORY},
             }
         },
+        "checks": {HEALTH_CHECK_NAME: check},
     }
     return WorkloadPlan(
         config=render_config(config),
-        command=command,
-        layer=layer,
+        layer=ops.pebble.Layer(layer_config),
         open_ports=frozenset({config.listen_port}),
     )
 
@@ -83,11 +115,13 @@ class VerdaccioWorkload:
         """Apply only differences between current and desired workload state."""
         try:
             config_changed = self._sync_config(plan.config)
-            service_changed = self._sync_service(plan)
+            service_changed, check_changed = self._sync_layer(plan)
 
             if service_changed:
                 self._container.replan()
                 return
+            if check_changed:
+                self._container.replan()
 
             service = self._container.get_service(SERVICE_NAME)
             if config_changed and service.is_running():
@@ -104,6 +138,14 @@ class VerdaccioWorkload:
         except (ops.ModelError, ops.pebble.APIError, ops.pebble.ConnectionError) as error:
             raise WorkloadUnavailableError(str(error)) from error
 
+    def is_healthy(self) -> bool:
+        """Return whether Pebble's Verdaccio health check is passing."""
+        try:
+            check = self._container.get_check(HEALTH_CHECK_NAME)
+            return check.status is ops.pebble.CheckStatus.UP
+        except (ops.ModelError, ops.pebble.APIError, ops.pebble.ConnectionError) as error:
+            raise WorkloadUnavailableError(str(error)) from error
+
     def _sync_config(self, desired: str) -> bool:
         if self._container.exists(CONFIG_PATH):
             with self._container.pull(CONFIG_PATH) as stream:
@@ -117,17 +159,16 @@ class VerdaccioWorkload:
         self._container.push(CONFIG_PATH, desired, make_dirs=True, permissions=0o644)
         return True
 
-    def _sync_service(self, plan: WorkloadPlan) -> bool:
-        service = self._container.get_plan().services.get(SERVICE_NAME)
-        if (
-            service is not None
-            and service.command == plan.command
-            and service.startup is ops.pebble.ServiceStartup.ENABLED
-            and service.user_id == WORKLOAD_USER_ID
-            and service.working_dir == WORKING_DIRECTORY
-            and service.environment == {"HOME": WORKING_DIRECTORY}
-        ):
-            return False
+    def _sync_layer(self, plan: WorkloadPlan) -> tuple[bool, bool]:
+        current_plan = self._container.get_plan()
+        service_changed = (
+            current_plan.services.get(SERVICE_NAME) != plan.layer.services[SERVICE_NAME]
+        )
+        check_changed = (
+            current_plan.checks.get(HEALTH_CHECK_NAME) != plan.layer.checks[HEALTH_CHECK_NAME]
+        )
+        if not service_changed and not check_changed:
+            return False, False
 
         self._container.add_layer(SERVICE_NAME, plan.layer, combine=True)
-        return True
+        return service_changed, check_changed

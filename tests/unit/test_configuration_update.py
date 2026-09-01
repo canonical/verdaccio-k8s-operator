@@ -1,10 +1,12 @@
 from pathlib import Path
 
+import ops
+import pytest
 import yaml
 from ops import pebble, testing
 
 from charm import STORAGE_NAME, VerdaccioK8SCharm
-from workload import CONFIG_PATH, SERVICE_NAME
+from workload import CONFIG_PATH, HEALTH_CHECK_NAME, SERVICE_NAME
 
 
 def test_log_level_change_restarts_service(tmp_path: Path) -> None:
@@ -53,15 +55,60 @@ def test_listener_configuration_updates_service_and_port() -> None:
                 "listen-protocol": "https",
                 "listen-address": "::",
                 "listen-port": 8080,
+                "url-prefix": "/registry/",
             },
             containers={container},
             storages={testing.Storage(STORAGE_NAME)},
         ),
     )
 
-    service = output.get_container("verdaccio").plan.services[SERVICE_NAME]
+    workload = output.get_container("verdaccio")
+    service = workload.plan.services[SERVICE_NAME]
     assert service.command.endswith("--listen https://[::]:8080")
+    health_check = workload.plan.checks[HEALTH_CHECK_NAME]
+    assert health_check.http is None
+    assert health_check.tcp == {"host": "::1", "port": 8080}
     assert output.opened_ports == {testing.TCPPort(8080)}
+
+
+def test_url_prefix_restarts_service_without_changing_health_path(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    ctx = testing.Context(VerdaccioK8SCharm)
+    config_dir = tmp_path / "conf"
+    config_dir.mkdir()
+    container = testing.Container(
+        "verdaccio",
+        can_connect=True,
+        mounts={"config": testing.Mount(location="/verdaccio/conf", source=config_dir)},
+    )
+    storage = testing.Storage(STORAGE_NAME)
+    initial = ctx.run(
+        ctx.on.pebble_ready(container),
+        testing.State(containers={container}, storages={storage}),
+    )
+    restart_calls: list[tuple[str, ...]] = []
+    original_restart = ops.Container.restart
+
+    def record_restart(container: ops.Container, *service_names: str) -> None:
+        restart_calls.append(service_names)
+        original_restart(container, *service_names)
+
+    monkeypatch.setattr(ops.Container, "restart", record_restart)
+    output = ctx.run(
+        ctx.on.config_changed(),
+        testing.State(
+            config={"url-prefix": "/registry/"},
+            containers=initial.containers,
+            opened_ports=initial.opened_ports,
+            storages=initial.storages,
+        ),
+    )
+
+    assert output.get_container("verdaccio").plan.checks[HEALTH_CHECK_NAME].http == {
+        "url": "http://127.0.0.1:4873/-/ping"
+    }
+    assert restart_calls == [(SERVICE_NAME,)]
 
 
 def test_blank_uplinks_and_packages_clear_sections() -> None:

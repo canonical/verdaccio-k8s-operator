@@ -23,6 +23,7 @@ class VerdaccioK8SCharm(ops.CharmBase):
 
         events = (
             self.on.config_changed,
+            self.on.upgrade_charm,
             self.on[CONTAINER_NAME].pebble_ready,
             self.on[STORAGE_NAME].storage_attached,
         )
@@ -71,12 +72,17 @@ class VerdaccioK8SCharm(ops.CharmBase):
 
         try:
             running = self._workload.is_running()
+            healthy = running and self._workload.is_healthy()
         except WorkloadUnavailableError:
             event.add_status(ops.WaitingStatus("Waiting for Verdaccio container"))
             return
 
         if not running:
             event.add_status(ops.MaintenanceStatus("Waiting for Verdaccio service"))
+            return
+
+        if not healthy:
+            event.add_status(ops.MaintenanceStatus("Waiting for Verdaccio health check"))
             return
 
         event.add_status(ops.ActiveStatus())
