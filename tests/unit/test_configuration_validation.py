@@ -79,3 +79,17 @@ def test_all_numeric_non_ip_listen_address_is_rejected() -> None:
 
     assert output.unit_status == testing.BlockedStatus("Invalid configuration: listen_address")
     assert output.get_container("verdaccio").plan.services == {}
+
+
+def test_ingress_unsupported_maximum_port_is_blocked() -> None:
+    ctx = testing.Context(VerdaccioK8SCharm)
+    container = testing.Container("verdaccio", can_connect=True)
+
+    output = ctx.run(
+        ctx.on.config_changed(),
+        testing.State(config={"listen-port": 65535}, containers={container}),
+    )
+
+    assert output.unit_status == testing.BlockedStatus("Invalid configuration: listen_port")
+    assert output.get_container("verdaccio").plan.services == {}
+    assert output.opened_ports == set()

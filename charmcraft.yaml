@@ -15,6 +15,18 @@ assumes:
   - juju >= 3.6
   - k8s-api
 
+requires:
+  ingress:
+    interface: ingress
+    limit: 1
+    optional: true
+    description: |
+      Integration to expose Verdaccio outside the Juju model.
+
+charm-libs:
+  - lib: traefik-k8s.ingress
+    version: "2"
+
 parts:
   charm:
     plugin: uv
@@ -108,6 +120,8 @@ config:
       default: ""
       description: |
         Value for url_prefix, for example /registry/. Leave empty to omit it.
+        While ingress is related, the provider's public path takes precedence
+        so Verdaccio generates URLs that match the published route.
     security-config:
       type: string
       default: ""
@@ -230,7 +244,7 @@ config:
     listen-port:
       type: int
       default: 4873
-      description: TCP port on which Verdaccio listens (1-65535).
+      description: TCP port on which Verdaccio listens (1-65534).
 
 storage:
   data:

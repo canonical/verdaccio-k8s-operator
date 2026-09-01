@@ -1,6 +1,7 @@
 """Plan and apply Verdaccio workload state through Pebble."""
 
 from dataclasses import dataclass
+from urllib.parse import urlsplit
 
 import ops
 
@@ -28,9 +29,20 @@ class WorkloadPlan:
     open_ports: frozenset[int]
 
 
-def render_config(config: CharmConfig) -> str:
-    """Serialize every validated Verdaccio option as workload YAML."""
-    return config.verdaccio.as_yaml()
+def _workload_settings(
+    config: CharmConfig, ingress_url: str | None
+) -> tuple[str, dict[str, str]]:
+    """Use the ingress-owned path for Verdaccio's generated public URLs."""
+    environment = {"HOME": WORKING_DIRECTORY}
+    if ingress_url is None:
+        return config.verdaccio.as_yaml(), environment
+
+    parsed_url = urlsplit(ingress_url)
+    ingress_path = parsed_url.path.strip("/")
+    url_prefix = f"/{ingress_path}" if ingress_path else None
+    verdaccio = config.verdaccio.model_copy(update={"url_prefix": url_prefix})
+    environment["VERDACCIO_PUBLIC_URL"] = f"{parsed_url.scheme}://{parsed_url.netloc}"
+    return verdaccio.as_yaml(), environment
 
 
 def build_command(config: CharmConfig) -> str:
@@ -61,7 +73,7 @@ def build_health_check_url(config: CharmConfig) -> str:
     return f"http://{address}:{config.listen_port}{HEALTH_CHECK_PATH}"
 
 
-def build_plan(config: CharmConfig) -> WorkloadPlan:
+def build_plan(config: CharmConfig, *, ingress_url: str | None = None) -> WorkloadPlan:
     """Build the complete desired workload state without side effects."""
     check: ops.pebble.CheckDict = {
         "override": "replace",
@@ -78,6 +90,7 @@ def build_plan(config: CharmConfig) -> WorkloadPlan:
     else:
         check["http"] = {"url": build_health_check_url(config)}
 
+    rendered_config, environment = _workload_settings(config, ingress_url)
     layer_config: ops.pebble.LayerDict = {
         "summary": "Verdaccio",
         "description": "Pebble layer for Verdaccio",
@@ -89,13 +102,13 @@ def build_plan(config: CharmConfig) -> WorkloadPlan:
                 "startup": "enabled",
                 "user-id": WORKLOAD_USER_ID,
                 "working-dir": WORKING_DIRECTORY,
-                "environment": {"HOME": WORKING_DIRECTORY},
+                "environment": environment,
             }
         },
         "checks": {HEALTH_CHECK_NAME: check},
     }
     return WorkloadPlan(
-        config=render_config(config),
+        config=rendered_config,
         layer=ops.pebble.Layer(layer_config),
         open_ports=frozenset({config.listen_port}),
     )

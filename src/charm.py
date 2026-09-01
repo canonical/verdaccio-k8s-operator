@@ -4,6 +4,7 @@
 import logging
 
 import ops
+from charms.traefik_k8s.v2.ingress import IngressPerAppRequirer
 from pydantic import ValidationError
 
 from configuration import load_config, validation_error_message
@@ -20,12 +21,18 @@ class VerdaccioK8SCharm(ops.CharmBase):
         super().__init__(framework)
         container = self.unit.get_container(CONTAINER_NAME)
         self._workload = VerdaccioWorkload(container)
+        self._ingress = IngressPerAppRequirer(self, strip_prefix=True)
 
         events = (
             self.on.config_changed,
             self.on.upgrade_charm,
             self.on[CONTAINER_NAME].pebble_ready,
             self.on[STORAGE_NAME].storage_attached,
+            self.on["ingress"].relation_created,
+            self.on["ingress"].relation_joined,
+            self.on["ingress"].relation_changed,
+            self.on["ingress"].relation_departed,
+            self.on["ingress"].relation_broken,
         )
         for event in events:
             framework.observe(event, self._reconcile)
@@ -46,11 +53,15 @@ class VerdaccioK8SCharm(ops.CharmBase):
             self.unit.status = ops.WaitingStatus("Waiting for Verdaccio container")
             return
 
-        plan = build_plan(config)
+        plan = build_plan(config, ingress_url=self._ingress.url)
         self.unit.status = ops.MaintenanceStatus("Reconciling Verdaccio")
+        self.unit.set_ports(*plan.open_ports)
+        self._ingress.provide_ingress_requirements(
+            scheme=config.listen_protocol,
+            port=config.listen_port,
+        )
         try:
             self._workload.apply(plan)
-            self.unit.set_ports(*plan.open_ports)
         except WorkloadUnavailableError as error:
             logger.info("Verdaccio container is not ready: %s", error)
             self.unit.status = ops.WaitingStatus("Waiting for Verdaccio container")

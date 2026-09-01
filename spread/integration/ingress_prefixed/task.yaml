@@ -1,0 +1,37 @@
+summary: Path ingress serves Verdaccio with matching public URLs
+
+execute: |
+  source "${SPREAD_PATH}/spread/integration/helpers.sh"
+
+  deploy_ingress path
+
+  PUBLIC_HOST=traefik.local
+  PUBLIC_PATH="/${MODEL}-verdaccio-k8s"
+  prefixed_ready=false
+  for _ in {1..60}; do
+    if PREFIXED_CONFIG="$(read_config)" && \
+       PREFIXED_PLAN="$(read_plan)" && \
+       RELATION_DATA="$(read_ingress_relation)" && \
+       PREFIXED_PAGE="$(fetch_ingress "${PUBLIC_HOST}" "${PUBLIC_PATH}/")"; then
+      case "${PREFIXED_CONFIG}" in
+        *"url_prefix: ${PUBLIC_PATH}"*) ;;
+        *) sleep 2; continue ;;
+      esac
+      case "${PREFIXED_PLAN}" in
+        *"VERDACCIO_PUBLIC_URL: http://${PUBLIC_HOST}"*) ;;
+        *) sleep 2; continue ;;
+      esac
+      case "${RELATION_DATA}" in
+        *'port: "4873"'*'strip-prefix: "true"'*) ;;
+        *) sleep 2; continue ;;
+      esac
+      case "${PREFIXED_PAGE}" in
+        *"<base href=\"http://${PUBLIC_HOST}${PUBLIC_PATH}/\">"*) ;;
+        *) sleep 2; continue ;;
+      esac
+      prefixed_ready=true
+      break
+    fi
+    sleep 2
+  done
+  test "${prefixed_ready}" = true

@@ -32,11 +32,12 @@ show_missing = true
 filterwarnings = ["error"]
 log_cli = true
 log_cli_level = "INFO"
-pythonpath = ["src"]
+pythonpath = ["src", "lib"]
 testpaths = ["tests/unit"]
 
 [tool.ruff]
 line-length = 99
+extend-exclude = ["lib"]
 
 [tool.ruff.lint]
 select = ["C", "D", "E", "F", "I", "N", "W"]
@@ -46,8 +47,8 @@ ignore = ["D105", "D107", "D203", "D213"]
 "tests/*" = ["D100", "D101", "D102", "D103", "D104"]
 
 [tool.codespell]
-skip = ".git,.venv,build,./docs/tools/*,parts,prime,stage,uv.lock"
+skip = ".git,.venv,build,./docs/tools/*,lib,parts,prime,stage,uv.lock"
 
 [tool.pyright]
 include = ["src", "tests/unit"]
-extraPaths = ["src"]
+extraPaths = ["src", "lib"]

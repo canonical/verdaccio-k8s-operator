@@ -1,0 +1,35 @@
+summary: Subdomain ingress serves Verdaccio at its root URL
+
+execute: |
+  source "${SPREAD_PATH}/spread/integration/helpers.sh"
+
+  deploy_ingress subdomain
+
+  PUBLIC_HOST="${MODEL}-verdaccio-k8s.traefik.local"
+  root_ready=false
+  for _ in {1..60}; do
+    if ROOT_CONFIG="$(read_config)" && \
+       ROOT_PLAN="$(read_plan)" && \
+       RELATION_DATA="$(read_ingress_relation)" && \
+       ROOT_PAGE="$(fetch_ingress "${PUBLIC_HOST}" /)"; then
+      case "${ROOT_CONFIG}" in
+        *"url_prefix:"*) sleep 2; continue ;;
+      esac
+      case "${ROOT_PLAN}" in
+        *"VERDACCIO_PUBLIC_URL: http://${PUBLIC_HOST}"*) ;;
+        *) sleep 2; continue ;;
+      esac
+      case "${RELATION_DATA}" in
+        *'port: "4873"'*'strip-prefix: "true"'*) ;;
+        *) sleep 2; continue ;;
+      esac
+      case "${ROOT_PAGE}" in
+        *"<base href=\"http://${PUBLIC_HOST}/\">"*) ;;
+        *) sleep 2; continue ;;
+      esac
+      root_ready=true
+      break
+    fi
+    sleep 2
+  done
+  test "${root_ready}" = true

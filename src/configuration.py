@@ -335,7 +335,7 @@ class CharmConfig(ConfigModel):
     verdaccio: VerdaccioConfig
     listen_protocol: Literal["http", "https"]
     listen_address: str = Field(min_length=1)
-    listen_port: int = Field(ge=1, le=65535)
+    listen_port: int = Field(ge=1, le=65534)
 
     @field_validator("listen_protocol")
     @classmethod
