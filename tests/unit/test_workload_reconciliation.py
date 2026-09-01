@@ -4,17 +4,18 @@ from pathlib import Path
 import yaml
 from ops import pebble, testing
 
-from charm import VerdaccioK8SCharm
+from charm import STORAGE_NAME, VerdaccioK8SCharm
 from workload import CONFIG_PATH, SERVICE_NAME, WORKLOAD_USER_ID
 
 
 def test_pebble_ready_converges_workload() -> None:
     ctx = testing.Context(VerdaccioK8SCharm)
     container = testing.Container("verdaccio", can_connect=True)
+    storage = testing.Storage(STORAGE_NAME)
 
     output = ctx.run(
         ctx.on.pebble_ready(container),
-        testing.State(containers={container}),
+        testing.State(containers={container}, storages={storage}),
     )
 
     workload = output.get_container("verdaccio")
@@ -33,8 +34,12 @@ def test_pebble_ready_converges_workload() -> None:
 def test_missing_container_is_waiting() -> None:
     ctx = testing.Context(VerdaccioK8SCharm)
     container = testing.Container("verdaccio", can_connect=False)
+    storage = testing.Storage(STORAGE_NAME)
 
-    output = ctx.run(ctx.on.config_changed(), testing.State(containers={container}))
+    output = ctx.run(
+        ctx.on.config_changed(),
+        testing.State(containers={container}, storages={storage}),
+    )
 
     assert output.unit_status == testing.WaitingStatus("Waiting for Verdaccio container")
 
@@ -48,7 +53,12 @@ def test_reconciliation_is_convergent(tmp_path: Path) -> None:
         can_connect=True,
         mounts={"config": testing.Mount(location="/verdaccio/conf", source=config_dir)},
     )
-    first = ctx.run(ctx.on.pebble_ready(container), testing.State(containers={container}))
+    storage = testing.Storage(STORAGE_NAME)
+
+    first = ctx.run(
+        ctx.on.pebble_ready(container),
+        testing.State(containers={container}, storages={storage}),
+    )
     config_path = config_dir / "config.yaml"
     fixed_time = 1_700_000_000_000_000_000
     os.utime(config_path, ns=(fixed_time, fixed_time))
@@ -59,3 +69,57 @@ def test_reconciliation_is_convergent(tmp_path: Path) -> None:
     assert second.opened_ports == first.opened_ports
     assert second.unit_status == first.unit_status
     assert config_path.stat().st_mtime_ns == fixed_time
+
+
+def test_missing_storage_waits_without_mutating_workload() -> None:
+    ctx = testing.Context(VerdaccioK8SCharm)
+    container = testing.Container("verdaccio", can_connect=True)
+
+    output = ctx.run(ctx.on.config_changed(), testing.State(containers={container}))
+
+    assert output.unit_status == testing.WaitingStatus("Waiting for persistent storage")
+    assert output.get_container("verdaccio").plan.services == {}
+    assert output.opened_ports == set()
+
+
+def test_collect_status_reports_missing_storage() -> None:
+    ctx = testing.Context(VerdaccioK8SCharm)
+    container = testing.Container("verdaccio", can_connect=True)
+
+    output = ctx.run(ctx.on.collect_unit_status(), testing.State(containers={container}))
+
+    assert output.unit_status == testing.WaitingStatus("Waiting for persistent storage")
+
+
+def test_storage_attached_converges_workload_and_preserves_data(tmp_path: Path) -> None:
+    ctx = testing.Context(VerdaccioK8SCharm)
+    storage = testing.Storage(STORAGE_NAME)
+    storage_root = storage.get_filesystem(ctx)
+    marker = storage_root / "private-package.json"
+    marker.write_text('{"name":"private-package"}')
+    config_root = tmp_path / "conf"
+    config_root.mkdir()
+    container = testing.Container(
+        "verdaccio",
+        can_connect=True,
+        mounts={
+            "config": testing.Mount(location="/verdaccio/conf", source=config_root),
+            STORAGE_NAME: testing.Mount(
+                location="/verdaccio/storage",
+                source=storage_root,
+            ),
+        },
+    )
+
+    first = ctx.run(
+        ctx.on.storage_attached(storage),
+        testing.State(containers={container}, storages={storage}),
+    )
+    second = ctx.run(ctx.on.config_changed(), first)
+
+    workload_root = second.get_container("verdaccio").get_filesystem(ctx)
+    assert (
+        workload_root / "verdaccio/storage/private-package.json"
+    ).read_text() == '{"name":"private-package"}'
+    assert second.containers == first.containers
+    assert second.unit_status == testing.ActiveStatus()

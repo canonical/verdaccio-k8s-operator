@@ -1,0 +1,36 @@
+summary: Verdaccio data survives workload container replacement
+
+execute: |
+  source "${SPREAD_PATH}/spread/integration/helpers.sh"
+
+  sudo -H -u ubuntu juju ssh \
+    --model "${MODEL}" \
+    --container verdaccio \
+    verdaccio-k8s/0 \
+    touch /verdaccio/storage/persistence-marker
+  sudo -H -u ubuntu juju ssh \
+    --model "${MODEL}" \
+    --container verdaccio \
+    verdaccio-k8s/0 \
+    touch /tmp/ephemeral-marker
+
+  sudo -H -u ubuntu juju ssh --model "${MODEL}" --container verdaccio verdaccio-k8s/0 test -e /verdaccio/storage/persistence-marker
+  sudo -H -u ubuntu juju ssh --model "${MODEL}" --container verdaccio verdaccio-k8s/0 test -e /tmp/ephemeral-marker
+
+  sudo -H -u ubuntu juju ssh \
+    --model "${MODEL}" \
+    --container verdaccio \
+    verdaccio-k8s/0 \
+    kill -TERM 1 || true
+
+  storage_recovered=false
+  for _ in {1..60}; do
+    if sudo -H -u ubuntu juju ssh --model "${MODEL}" --container verdaccio verdaccio-k8s/0 test -e /verdaccio/storage/persistence-marker 2>/dev/null &&
+       ! sudo -H -u ubuntu juju ssh --model "${MODEL}" --container verdaccio verdaccio-k8s/0 test -e /tmp/ephemeral-marker 2>/dev/null &&
+       ping_registry 4873; then
+      storage_recovered=true
+      break
+    fi
+    sleep 2
+  done
+  test "${storage_recovered}" = true

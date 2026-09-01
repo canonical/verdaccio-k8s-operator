@@ -28,8 +28,9 @@ config:
       type: string
       default: /verdaccio/storage
       description: |
-        Path for Verdaccio's storage field. Leave empty only when store-config
-        configures a storage plugin.
+        Path for Verdaccio's storage field. The default uses the persistent
+        data volume mounted at /verdaccio/storage. Leave empty only when
+        store-config configures a storage plugin.
     plugins-path:
       type: string
       default: ""
@@ -231,9 +232,18 @@ config:
       default: 4873
       description: TCP port on which Verdaccio listens (1-65535).
 
+storage:
+  data:
+    description: Persistent Verdaccio packages, metadata, and credentials.
+    type: filesystem
+    minimum-size: 1G
+
 containers:
   verdaccio:
     resource: verdaccio-image
+    mounts:
+      - storage: data
+        location: /verdaccio/storage
 
 resources:
   verdaccio-image:

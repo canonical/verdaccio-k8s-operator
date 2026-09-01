@@ -3,7 +3,7 @@ from pathlib import Path
 import yaml
 from ops import pebble, testing
 
-from charm import VerdaccioK8SCharm
+from charm import STORAGE_NAME, VerdaccioK8SCharm
 from workload import CONFIG_PATH, SERVICE_NAME
 
 
@@ -16,7 +16,13 @@ def test_log_level_change_restarts_service(tmp_path: Path) -> None:
         can_connect=True,
         mounts={"config": testing.Mount(location="/verdaccio/conf", source=config_dir)},
     )
-    initial = ctx.run(ctx.on.pebble_ready(container), testing.State(containers={container}))
+    initial = ctx.run(
+        ctx.on.pebble_ready(container),
+        testing.State(
+            containers={container},
+            storages={testing.Storage(STORAGE_NAME)},
+        ),
+    )
 
     output = ctx.run(
         ctx.on.config_changed(),
@@ -24,6 +30,7 @@ def test_log_level_change_restarts_service(tmp_path: Path) -> None:
             config={"log-config": "type: stdout\nformat: pretty\nlevel: debug\n"},
             containers=initial.containers,
             opened_ports=initial.opened_ports,
+            storages=initial.storages,
         ),
     )
 
@@ -48,6 +55,7 @@ def test_listener_configuration_updates_service_and_port() -> None:
                 "listen-port": 8080,
             },
             containers={container},
+            storages={testing.Storage(STORAGE_NAME)},
         ),
     )
 
@@ -63,7 +71,9 @@ def test_blank_uplinks_and_packages_clear_sections() -> None:
     output = ctx.run(
         ctx.on.config_changed(),
         testing.State(
-            config={"uplinks-config": "", "packages-config": ""}, containers={container}
+            config={"uplinks-config": "", "packages-config": ""},
+            containers={container},
+            storages={testing.Storage(STORAGE_NAME)},
         ),
     )
 
@@ -83,6 +93,7 @@ def test_store_plugin_can_replace_storage_path() -> None:
         testing.State(
             config={"storage-path": "", "store-config": "memory:\n  limit: 1000\n"},
             containers={container},
+            storages={testing.Storage(STORAGE_NAME)},
         ),
     )
 
@@ -111,6 +122,7 @@ def test_numeric_uplink_intervals_and_boolean_trust_proxy_are_rendered() -> None
                 "server-config": "trustProxy: true\n",
             },
             containers={container},
+            storages={testing.Storage(STORAGE_NAME)},
         ),
     )
 
@@ -129,7 +141,11 @@ def test_trailing_dot_fqdn_is_accepted() -> None:
 
     output = ctx.run(
         ctx.on.config_changed(),
-        testing.State(config={"listen-address": "registry.example.test."}, containers={container}),
+        testing.State(
+            config={"listen-address": "registry.example.test."},
+            containers={container},
+            storages={testing.Storage(STORAGE_NAME)},
+        ),
     )
 
     service = output.get_container("verdaccio").plan.services[SERVICE_NAME]
@@ -323,7 +339,11 @@ i18n: {web: en-US}
 
     output = ctx.run(
         ctx.on.config_changed(),
-        testing.State(config=config, containers={container}),
+        testing.State(
+            config=config,
+            containers={container},
+            storages={testing.Storage(STORAGE_NAME)},
+        ),
     )
 
     rendered = (config_dir / "config.yaml").read_text()
@@ -338,7 +358,11 @@ def test_pfx_passphrase_is_serialized_to_workload() -> None:
 
     output = ctx.run(
         ctx.on.config_changed(),
-        testing.State(config={"https-config": source}, containers={container}),
+        testing.State(
+            config={"https-config": source},
+            containers={container},
+            storages={testing.Storage(STORAGE_NAME)},
+        ),
     )
 
     workload = output.get_container("verdaccio")

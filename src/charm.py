@@ -10,6 +10,7 @@ from configuration import load_config, validation_error_message
 from workload import CONTAINER_NAME, VerdaccioWorkload, WorkloadUnavailableError, build_plan
 
 logger = logging.getLogger(__name__)
+STORAGE_NAME = "data"
 
 
 class VerdaccioK8SCharm(ops.CharmBase):
@@ -20,7 +21,12 @@ class VerdaccioK8SCharm(ops.CharmBase):
         container = self.unit.get_container(CONTAINER_NAME)
         self._workload = VerdaccioWorkload(container)
 
-        for event in (self.on.config_changed, self.on[CONTAINER_NAME].pebble_ready):
+        events = (
+            self.on.config_changed,
+            self.on[CONTAINER_NAME].pebble_ready,
+            self.on[STORAGE_NAME].storage_attached,
+        )
+        for event in events:
             framework.observe(event, self._reconcile)
         framework.observe(self.on.collect_unit_status, self._on_collect_unit_status)
 
@@ -30,6 +36,9 @@ class VerdaccioK8SCharm(ops.CharmBase):
             config = load_config(self.config)
         except ValidationError as error:
             self.unit.status = ops.BlockedStatus(validation_error_message(error))
+            return
+        if not self.model.storages[STORAGE_NAME]:
+            self.unit.status = ops.WaitingStatus("Waiting for persistent storage")
             return
 
         if not self._workload.can_connect():
@@ -51,6 +60,9 @@ class VerdaccioK8SCharm(ops.CharmBase):
             load_config(self.config)
         except ValidationError as error:
             event.add_status(ops.BlockedStatus(validation_error_message(error)))
+            return
+        if not self.model.storages[STORAGE_NAME]:
+            event.add_status(ops.WaitingStatus("Waiting for persistent storage"))
             return
 
         if not self._workload.can_connect():
