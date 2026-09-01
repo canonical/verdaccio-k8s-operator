@@ -122,38 +122,40 @@ sed -n '3200,3240p' docs/tools/operator.md      # read one entry
 ### `docs/tools/dev-environment.md` — the charm testing environment
 
 The one hand-written file under `docs/tools/`. Unit tests run anywhere; anything
-that must actually *deploy* — a packed charm, a locally built rock, an
-integration test — runs in the LXD environment it describes, managed by
-**`scripts/charm-dev-env.sh`**.
+that must actually *deploy* — a packed charm or an integration test — runs in
+the Workshop environment it describes, defined by **`.workshop/dev.yaml`**.
 
-One nested LXD container (`security.nesting=true`) holds Docker, a kind
-Kubernetes cluster, a bootstrapped Juju controller, and Charmcraft/Rockcraft.
-The script runs on the LXD host, next to this repository, and bind-mounts the
-working tree into the container — no copying, no separate sync step:
+Workshop creates an Ubuntu 24.04 LXD system container, mounts the working tree
+at `/project`, and composes the `uv`, `docker-ce`, `juju-cli`, and local
+`project-charm-dev` SDKs. Docker runs a Kind Kubernetes cluster; the local SDK
+installs Kind and Charmcraft and bootstraps a Juju controller.
+
+The runbook explains why `.workshop/charm-dev/kind.yaml` pins Kubernetes 1.35.8
+and enables `KubeletInUserNamespace`; preserve both settings unless the complete
+Workshop lifecycle is reverified against a replacement node image.
+
+Run it with:
 
 ```bash
-./scripts/charm-dev-env.sh create      # idempotent, self-healing
-./scripts/charm-dev-env.sh status
-./scripts/charm-dev-env.sh exec "juju status --color=false"
+workshop launch dev
+workshop run dev -- status
+workshop exec dev -- juju status --color=false
 ```
 
-`exec` runs as `ubuntu` in the mounted working tree, so edits made on the host
-are what gets built.
+Commands run in the mounted working tree, so edits made on the host are what get
+built.
 
 Four rules the environment imposes; the runbook explains why each exists:
 
-- Pack with `charmcraft pack --destructive-mode` / `rockcraft pack
-  --destructive-mode`. Managed LXD builds cannot work — AppArmor stacking does
-  not survive LXD inside LXD inside LXD. The container base must therefore match
-  the artifact base (`ubuntu@24.04`).
-- `sudo chown ubuntu:ubuntu ./*.charm ./*.rock` after packing. Destructive
-  builds produce root-owned files and the strictly confined `juju` snap can only
-  read files owned by the invoking user.
-- Run `juju` **inside** the container. It reaches the controller through a
-  Kubernetes port-forward proxy; the controller ClusterIP is not routable from
-  outside the cluster.
-- Recreating the kind cluster invalidates the Juju registration. Re-run `create`
-  or `reset-cluster`; both detect the stale controller and re-bootstrap.
+- Pack with the root action `workshop run --uid 0 dev -- pack-charm`. It uses
+  destructive mode because a managed craft build would add another LXD layer.
+  The Workshop base must therefore match the charm base (`ubuntu@24.04`).
+- The packing action returns `.charm` files to `workshop:workshop`; do not leave
+  artifacts owned by root.
+- Run Docker, Kind, and Juju **inside** the Workshop. Their state and endpoints
+  are local to that environment.
+- Use `workshop run dev -- reset-cluster` to replace Kind and bootstrap a fresh
+  Juju controller.
 
 ## Working rules
 

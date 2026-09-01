@@ -1,0 +1,22 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+for executable in docker kind kubectl charmcraft; do
+  if ! command -v "$executable" >/dev/null 2>&1; then
+    workshopctl set-health error "$executable not found on PATH"
+    exit 0
+  fi
+done
+
+if ! timeout 2 sudo -u workshop --login \
+  kubectl get nodes --context kind-dev >/dev/null 2>&1; then
+  workshopctl set-health waiting "Kind Kubernetes API is not ready"
+  exit 0
+fi
+
+if ! sudo -u workshop --login juju controllers --format=json 2>/dev/null | grep -q '"dev"'; then
+  workshopctl set-health error "Juju controller is not registered"
+  exit 0
+fi
+
+workshopctl set-health okay

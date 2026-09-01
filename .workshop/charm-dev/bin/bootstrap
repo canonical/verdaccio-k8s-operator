@@ -1,0 +1,46 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+cluster=dev
+cloud=kind-dev
+controller=dev
+model=dev
+kind_config=/project/.workshop/charm-dev/kind.yaml
+
+if [ "${1:-}" = "--reset" ]; then
+  juju kill-controller "$controller" --no-prompt -t 60s >/dev/null 2>&1 || true
+  juju unregister "$controller" --no-prompt >/dev/null 2>&1 || true
+  kind delete cluster --name "$cluster"
+elif [ "$#" -ne 0 ]; then
+  echo "usage: ${0##*/} [--reset]" >&2
+  exit 2
+fi
+
+mkdir -p "$HOME/.kube" "$HOME/.local/share/juju"
+if ! kind get clusters | grep -qxF "$cluster"; then
+  kind create cluster --name "$cluster" --config "$kind_config" --wait 300s
+fi
+
+kubectl cluster-info --context "kind-${cluster}" >/dev/null
+kubectl apply -f \
+  https://raw.githubusercontent.com/rancher/local-path-provisioner/v0.0.37/deploy/local-path-storage.yaml
+kubectl rollout status deployment/local-path-provisioner \
+  --namespace local-path-storage --timeout=300s
+kubectl annotate storageclass local-path \
+  storageclass.kubernetes.io/is-default-class=true --overwrite
+
+if juju controllers --format=json 2>/dev/null | grep -q "\"$controller\""; then
+  if timeout 60 juju status -m "$controller:controller" >/dev/null 2>&1; then
+    if ! juju show-model "$controller:$model" >/dev/null 2>&1; then
+      juju add-model -c "$controller" "$model"
+    fi
+    juju switch "$controller:$model"
+    exit 0
+  fi
+
+  juju unregister "$controller" --no-prompt >/dev/null 2>&1 || true
+fi
+
+juju bootstrap "$cloud" "$controller" --config bootstrap-timeout=1800
+juju add-model "$model"
+juju switch "$controller:$model"

@@ -1,0 +1,35 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+install_snap() {
+  local name=$1
+  shift
+  snap list "$name" >/dev/null 2>&1 || snap install "$name" "$@"
+}
+
+install_snap kubectl --classic
+install_snap charmcraft --classic
+
+case "$(dpkg --print-architecture)" in
+  amd64)
+    kind_arch=amd64
+    kind_sha256=aee6151561422756b764a4ae28e7f44cda5af5a9eead3cc9985112b1de8d8e0d
+    ;;
+  arm64)
+    kind_arch=arm64
+    kind_sha256=20022bee6cfcd5086cb7234d218e3454e6090022f2a8f55d1fa7fcf42c3867a2
+    ;;
+  *)
+    printf 'unsupported architecture: %s\n' "$(dpkg --print-architecture)" >&2
+    exit 1
+    ;;
+esac
+
+kind_path=/usr/local/bin/kind
+curl -fsSL \
+  "https://github.com/kubernetes-sigs/kind/releases/download/v0.33.0/kind-linux-${kind_arch}" \
+  -o "$kind_path"
+printf '%s  %s\n' "$kind_sha256" "$kind_path" | sha256sum --check
+chmod 0755 "$kind_path"
+
+install -d -m 0700 -o workshop -g workshop /home/workshop/.kube

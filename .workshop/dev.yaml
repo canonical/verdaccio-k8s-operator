@@ -1,0 +1,31 @@
+name: dev
+base: ubuntu@24.04
+sdks:
+  - name: uv
+    channel: latest/stable
+
+  - name: docker-ce
+    channel: latest/stable
+
+  - name: juju-cli
+    channel: latest/edge
+    plugs:
+      juju-config:
+        interface: mount
+        workshop-target: /home/workshop/.local/share/juju
+
+  - name: project-charm-dev
+
+actions:
+  status: |
+    docker info --format 'Docker {{.ServerVersion}}'
+    kubectl get nodes
+    juju status --color=false
+
+  reset-cluster: |
+    .workshop/charm-dev/bin/bootstrap --reset
+
+  pack-charm: |
+    charmcraft pack --destructive-mode --platform amd64 "$@"
+    chown workshop:workshop ./*.charm
+

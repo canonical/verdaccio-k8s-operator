@@ -1,0 +1,4 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+/project/.workshop/charm-dev/bin/bootstrap

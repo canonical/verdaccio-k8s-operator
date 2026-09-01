@@ -1,0 +1,4 @@
+name: charm-dev
+base: ubuntu@24.04
+title: Charm development
+summary: Kind and Charmcraft for this project
