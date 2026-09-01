@@ -24,10 +24,212 @@ parts:
 
 config:
   options:
-    log-level:
+    storage-path:
       type: string
-      default: info
-      description: Verdaccio log level (debug, info, warning, or error).
+      default: /verdaccio/storage
+      description: |
+        Path for Verdaccio's storage field. Leave empty only when store-config
+        configures a storage plugin.
+    plugins-path:
+      type: string
+      default: ""
+      description: |
+        Path for Verdaccio's plugins field. Leave empty to omit the field and
+        use only plugins installed in the workload image.
+    web-config:
+      type: string
+      default: ""
+      description: |
+        YAML mapping for web, without a top-level web key. Fields: title,
+        logo, logoDark, favicon, gravatar, sort_packages (asc or desc),
+        darkMode, url_prefix, language, login, scope, pkgManagers, showInfo,
+        showSettings, showSearch, showFooter, showThemeSwitch,
+        showDownloadTarball, showUplinks, hideDeprecatedVersions,
+        primaryColor, showRaw, scriptsHead, scriptsBodyAfter,
+        scriptsBodyBefore, metaScripts, bodyBefore, bodyAfter, rateLimit,
+        html_cache, and enabled.
+    auth-config:
+      type: string
+      default: |
+        htpasswd:
+          file: /verdaccio/storage/htpasswd
+      description: |
+        YAML mapping for auth, without a top-level auth key. Each key names an
+        authentication plugin. Built-in htpasswd fields: file, max_users,
+        algorithm (bcrypt, md5, sha1, or crypt), rounds (4-31), and
+        slow_verify_ms.
+    uplinks-config:
+      type: string
+      default: |
+        npmjs:
+          url: https://registry.npmjs.org/
+      description: |
+        YAML mapping for uplinks, without a top-level uplinks key. Each key
+        names an upstream registry. Fields: url, ca, cache, timeout, maxage,
+        max_fails, fail_timeout, http_proxy, https_proxy, no_proxy, headers,
+        auth, strict_ssl, and agent_options. Interval fields accept duration
+        strings or numbers interpreted as seconds. Auth fields: type (bearer
+        or basic), token, and token_env.
+    packages-config:
+      type: string
+      default: |
+        '@*/*':
+          access: $all
+          publish: $authenticated
+          unpublish: $authenticated
+          proxy: npmjs
+        '**':
+          access: $all
+          publish: $authenticated
+          unpublish: $authenticated
+          proxy: npmjs
+      description: |
+        YAML mapping for packages, without a top-level packages key. Each key
+        is a package pattern such as '@*/*' or '**'. Policy fields: storage,
+        access, publish, unpublish, and proxy. Role values are space-separated.
+    server-config:
+      type: string
+      default: ""
+      description: |
+        YAML mapping for server, without a top-level server key. Fields:
+        rateLimit, keepAliveTimeout, legacyAuthCache, pluginPrefix,
+        passwordValidationRegex, trustProxy (string, integer, or boolean), and
+        searchRemote. Rate-limit fields are windowMs and max;
+        legacy-auth-cache fields are enabled, maxEntries, and ttlMs.
+    publish-config:
+      type: string
+      default: ""
+      description: |
+        YAML mapping for publish, without a top-level publish key. Fields:
+        allow_offline, keep_readmes (latest, tagged, or all), and check_owners.
+    url-prefix:
+      type: string
+      default: ""
+      description: |
+        Value for url_prefix, for example /registry/. Leave empty to omit it.
+    security-config:
+      type: string
+      default: ""
+      description: |
+        YAML mapping for security, without a top-level security key. Sections:
+        web and api. JWT fields: sign and verify. API fields: legacy,
+        migrateToSecureLegacySignature, and jwt.
+    user-rate-limit-config:
+      type: string
+      default: ""
+      description: |
+        YAML mapping for userRateLimit, without a top-level userRateLimit key.
+        Fields: windowMs and max; both must be positive integers.
+    max-body-size:
+      type: string
+      default: ""
+      description: |
+        Value for max_body_size, for example 10mb. Leave empty to use
+        Verdaccio's default.
+    https-config:
+      type: string
+      default: ""
+      description: |
+        YAML mapping for https, without a top-level https key. Use key, cert,
+        and optional ca for PEM files, or pfx and optional passphrase for
+        PKCS#12.
+    user-agent:
+      type: string
+      default: ""
+      description: |
+        Value for user_agent: a custom string, true, or false. Leave empty to
+        omit the field. Boolean spellings are decoded before rendering.
+    http-proxy:
+      type: string
+      default: ""
+      description: |
+        URL for the top-level http_proxy field. Leave empty to omit it.
+    https-proxy:
+      type: string
+      default: ""
+      description: |
+        URL for the top-level https_proxy field. Leave empty to omit it.
+    no-proxy:
+      type: string
+      default: ""
+      description: |
+        Comma-separated hosts for no_proxy, for example localhost,127.0.0.1.
+        Leave empty to omit it.
+    store-config:
+      type: string
+      default: ""
+      description: |
+        YAML mapping for store, without a top-level store key. Each key names
+        a storage plugin and its value contains plugin-specific fields.
+    notifications-config:
+      type: string
+      default: ""
+      description: |
+        YAML mapping for notifications, without a top-level notifications key.
+        Fields: endpoint, content, packagePattern, packagePatternFlags, method,
+        and headers.
+    notify-config:
+      type: string
+      default: ""
+      description: |
+        YAML mapping or sequence for notify, without a top-level notify key.
+        Each webhook accepts endpoint, content, packagePattern,
+        packagePatternFlags, method, and headers.
+    middlewares-config:
+      type: string
+      default: |
+        audit:
+          enabled: true
+      description: |
+        YAML mapping for middlewares, without a top-level middlewares key.
+        Each key names a middleware plugin and its value contains
+        plugin-specific fields. Built-in audit fields include enabled,
+        strict_ssl, and timeout.
+    filters-config:
+      type: string
+      default: ""
+      description: |
+        YAML mapping for filters, without a top-level filters key. Each key
+        names a filter plugin. Package-filter fields include minAgeDays,
+        dateThreshold, block, allow, and replace.
+    log-config:
+      type: string
+      default: |
+        type: stdout
+        format: pretty
+        level: info
+      description: |
+        YAML mapping for log, without a top-level log key. Fields: type
+        (stdout or file), format (pretty, pretty-timestamped, or json), path,
+        level (fatal, error, warn, info, http, debug, or trace), colors, sync,
+        and redact. Redact fields: paths, censor, and remove.
+    flags-config:
+      type: string
+      default: ""
+      description: |
+        YAML mapping for flags, without a top-level flags key. Verdaccio 6
+        fields: searchRemote, changePassword, createUser, and webLogin.
+    i18n-config:
+      type: string
+      default: ""
+      description: |
+        YAML mapping for i18n, without a top-level i18n key. Field: web, set to
+        an enabled locale such as en-US.
+    listen-protocol:
+      type: string
+      default: http
+      description: |
+        Listener protocol: http or https. Selecting https requires
+        https-config.
+    listen-address:
+      type: string
+      default: 0.0.0.0
+      description: |
+        IPv4 address, IPv6 address, or DNS hostname on which Verdaccio listens.
+    listen-port:
+      type: int
+      default: 4873
+      description: TCP port on which Verdaccio listens (1-65535).
 
 containers:
   verdaccio:

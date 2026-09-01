@@ -1,0 +1,58 @@
+summary: Invalid configuration blocks safely and valid configuration recovers
+
+execute: |
+  source "${SPREAD_PATH}/spread/integration/helpers.sh"
+
+  LOG_CONFIG=$'type: stdout\nformat: json\nlevel: debug'
+  sudo -H -u ubuntu juju config \
+    --model "${MODEL}" \
+    verdaccio-k8s \
+    "log-config=${LOG_CONFIG}"
+
+  configured_ready=false
+  for _ in {1..30}; do
+    if CONFIG_BEFORE_INVALID="$(read_config)"; then
+      case "${CONFIG_BEFORE_INVALID}" in
+        *"format: json"*"level: debug"*)
+          if ping_registry 4873; then
+            configured_ready=true
+            break
+          fi
+          ;;
+      esac
+    fi
+    sleep 1
+  done
+  test "${configured_ready}" = true
+
+  INVALID_LOG_CONFIG=$'type: stdout\nlevel: verbose'
+  sudo -H -u ubuntu juju config \
+    --model "${MODEL}" \
+    verdaccio-k8s \
+    "log-config=${INVALID_LOG_CONFIG}"
+  sudo -H -u ubuntu env JUJU_MODEL="${MODEL}" juju wait-for \
+    application verdaccio-k8s \
+    --query='status=="blocked"' \
+    --timeout 2m
+
+  BLOCKED_STATUS="$(sudo -H -u ubuntu juju status --model "${MODEL}" --color=false)"
+  case "${BLOCKED_STATUS}" in
+    *"Invalid configuration: verdaccio.log.level"*) ;;
+    *)
+      echo "Invalid logger configuration did not report its field"
+      exit 1
+      ;;
+  esac
+  test "$(read_config)" = "${CONFIG_BEFORE_INVALID}"
+  ping_registry 4873
+
+  sudo -H -u ubuntu juju config \
+    --model "${MODEL}" \
+    verdaccio-k8s \
+    "log-config=${LOG_CONFIG}"
+  sudo -H -u ubuntu env JUJU_MODEL="${MODEL}" juju wait-for \
+    application verdaccio-k8s \
+    --query='status=="active"' \
+    --timeout 2m
+  test "$(read_config)" = "${CONFIG_BEFORE_INVALID}"
+  ping_registry 4873

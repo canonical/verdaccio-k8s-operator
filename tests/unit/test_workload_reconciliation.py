@@ -1,10 +1,11 @@
 import os
 from pathlib import Path
 
+import yaml
 from ops import pebble, testing
 
 from charm import VerdaccioK8SCharm
-from workload import COMMAND, CONFIG_PATH, PORT, SERVICE_NAME, WORKLOAD_USER_ID
+from workload import CONFIG_PATH, SERVICE_NAME, WORKLOAD_USER_ID
 
 
 def test_pebble_ready_converges_workload() -> None:
@@ -17,28 +18,16 @@ def test_pebble_ready_converges_workload() -> None:
     )
 
     workload = output.get_container("verdaccio")
-    assert workload.plan.services[SERVICE_NAME].command == COMMAND
+    assert workload.plan.services[SERVICE_NAME].command == (
+        "verdaccio --config /verdaccio/conf/config.yaml --listen http://0.0.0.0:4873"
+    )
     assert workload.plan.services[SERVICE_NAME].user_id == WORKLOAD_USER_ID
     assert workload.service_statuses[SERVICE_NAME] is pebble.ServiceStatus.ACTIVE
-    assert output.opened_ports == {testing.TCPPort(PORT)}
+    assert output.opened_ports == {testing.TCPPort(4873)}
     assert output.unit_status == testing.ActiveStatus()
     config = (workload.get_filesystem(ctx) / CONFIG_PATH.lstrip("/")).read_text()
-    assert "level: info" in config
-    assert "storage: /verdaccio/storage" in config
-
-
-def test_invalid_config_blocks_without_mutating_workload() -> None:
-    ctx = testing.Context(VerdaccioK8SCharm)
-    container = testing.Container("verdaccio", can_connect=True)
-
-    output = ctx.run(
-        ctx.on.config_changed(),
-        testing.State(config={"log-level": "verbose"}, containers={container}),
-    )
-
-    assert output.unit_status == testing.BlockedStatus("Invalid configuration: log_level")
-    assert output.get_container("verdaccio").plan.services == {}
-    assert output.opened_ports == set()
+    assert yaml.safe_load(config)["log"]["level"] == "info"
+    assert yaml.safe_load(config)["storage"] == "/verdaccio/storage"
 
 
 def test_missing_container_is_waiting() -> None:
@@ -48,33 +37,6 @@ def test_missing_container_is_waiting() -> None:
     output = ctx.run(ctx.on.config_changed(), testing.State(containers={container}))
 
     assert output.unit_status == testing.WaitingStatus("Waiting for Verdaccio container")
-
-
-def test_log_level_change_restarts_service(tmp_path: Path) -> None:
-    ctx = testing.Context(VerdaccioK8SCharm)
-    config_dir = tmp_path / "conf"
-    config_dir.mkdir()
-    container = testing.Container(
-        "verdaccio",
-        can_connect=True,
-        mounts={"config": testing.Mount(location="/verdaccio/conf", source=config_dir)},
-    )
-    initial = ctx.run(ctx.on.pebble_ready(container), testing.State(containers={container}))
-
-    output = ctx.run(
-        ctx.on.config_changed(),
-        testing.State(
-            config={"log-level": "debug"},
-            containers=initial.containers,
-            opened_ports=initial.opened_ports,
-        ),
-    )
-
-    workload = output.get_container("verdaccio")
-    config = (workload.get_filesystem(ctx) / CONFIG_PATH.lstrip("/")).read_text()
-    assert "level: debug" in config
-    assert workload.service_statuses[SERVICE_NAME] is pebble.ServiceStatus.ACTIVE
-    assert output.unit_status == testing.ActiveStatus()
 
 
 def test_reconciliation_is_convergent(tmp_path: Path) -> None:

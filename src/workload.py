@@ -8,9 +8,7 @@ from configuration import CharmConfig
 
 CONTAINER_NAME = "verdaccio"
 SERVICE_NAME = "verdaccio"
-PORT = 4873
 CONFIG_PATH = "/verdaccio/conf/config.yaml"
-COMMAND = f"verdaccio --config {CONFIG_PATH} --listen http://0.0.0.0:{PORT}"
 WORKLOAD_USER_ID = 10001
 WORKING_DIRECTORY = "/opt/verdaccio"
 
@@ -24,42 +22,30 @@ class WorkloadPlan:
     """Complete desired workload state."""
 
     config: str
+    command: str
     layer: ops.pebble.LayerDict
     open_ports: frozenset[int]
 
 
 def render_config(config: CharmConfig) -> str:
-    """Serialize validated configuration as Verdaccio YAML."""
-    return f"""storage: /verdaccio/storage
-auth:
-  htpasswd:
-    file: /verdaccio/storage/htpasswd
-uplinks:
-  npmjs:
-    url: https://registry.npmjs.org/
-packages:
-  '@*/*':
-    access: $all
-    publish: $authenticated
-    unpublish: $authenticated
-    proxy: npmjs
-  '**':
-    access: $all
-    publish: $authenticated
-    unpublish: $authenticated
-    proxy: npmjs
-middlewares:
-  audit:
-    enabled: true
-log:
-  type: stdout
-  format: pretty
-  level: {config.log_level}
-"""
+    """Serialize every validated Verdaccio option as workload YAML."""
+    return config.verdaccio.as_yaml()
+
+
+def build_command(config: CharmConfig) -> str:
+    """Build the validated listener command owned by the charm."""
+    address = (
+        f"[{config.listen_address}]" if ":" in config.listen_address else config.listen_address
+    )
+    return (
+        f"verdaccio --config {CONFIG_PATH} "
+        f"--listen {config.listen_protocol}://{address}:{config.listen_port}"
+    )
 
 
 def build_plan(config: CharmConfig) -> WorkloadPlan:
-    """Build the desired workload state without side effects."""
+    """Build the complete desired workload state without side effects."""
+    command = build_command(config)
     layer: ops.pebble.LayerDict = {
         "summary": "Verdaccio",
         "description": "Pebble layer for Verdaccio",
@@ -67,7 +53,7 @@ def build_plan(config: CharmConfig) -> WorkloadPlan:
             SERVICE_NAME: {
                 "override": "replace",
                 "summary": "Verdaccio npm registry",
-                "command": COMMAND,
+                "command": command,
                 "startup": "enabled",
                 "user-id": WORKLOAD_USER_ID,
                 "working-dir": WORKING_DIRECTORY,
@@ -77,8 +63,9 @@ def build_plan(config: CharmConfig) -> WorkloadPlan:
     }
     return WorkloadPlan(
         config=render_config(config),
+        command=command,
         layer=layer,
-        open_ports=frozenset({PORT}),
+        open_ports=frozenset({config.listen_port}),
     )
 
 
@@ -96,7 +83,7 @@ class VerdaccioWorkload:
         """Apply only differences between current and desired workload state."""
         try:
             config_changed = self._sync_config(plan.config)
-            service_changed = self._sync_service(plan.layer)
+            service_changed = self._sync_service(plan)
 
             if service_changed:
                 self._container.replan()
@@ -130,11 +117,11 @@ class VerdaccioWorkload:
         self._container.push(CONFIG_PATH, desired, make_dirs=True, permissions=0o644)
         return True
 
-    def _sync_service(self, layer: ops.pebble.LayerDict) -> bool:
+    def _sync_service(self, plan: WorkloadPlan) -> bool:
         service = self._container.get_plan().services.get(SERVICE_NAME)
         if (
             service is not None
-            and service.command == COMMAND
+            and service.command == plan.command
             and service.startup is ops.pebble.ServiceStartup.ENABLED
             and service.user_id == WORKLOAD_USER_ID
             and service.working_dir == WORKING_DIRECTORY
@@ -142,5 +129,5 @@ class VerdaccioWorkload:
         ):
             return False
 
-        self._container.add_layer(SERVICE_NAME, layer, combine=True)
+        self._container.add_layer(SERVICE_NAME, plan.layer, combine=True)
         return True

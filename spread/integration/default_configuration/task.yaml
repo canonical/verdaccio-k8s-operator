@@ -1,0 +1,31 @@
+summary: Default configuration starts a usable registry
+
+execute: |
+  source "${SPREAD_PATH}/spread/integration/helpers.sh"
+
+  default_ready=false
+  for _ in {1..30}; do
+    if DEFAULT_CONFIG="$(read_config)" && ping_registry 4873; then
+      default_ready=true
+      break
+    fi
+    sleep 1
+  done
+  test "${default_ready}" = true
+
+  case "${DEFAULT_CONFIG}" in
+    *"storage: /verdaccio/storage"*"htpasswd:"*"url: https://registry.npmjs.org/"*"'@*/*':"*"audit:"*"level: info"*) ;;
+    *)
+      echo "Default rendered configuration is incomplete"
+      exit 1
+      ;;
+  esac
+
+  CONFIG_API="$(sudo -H -u ubuntu juju config --model "${MODEL}" verdaccio-k8s 2>&1)"
+  case "${CONFIG_API}" in
+    *"YAML mapping for log, without a top-level log key"*"YAML mapping for web, without a top-level web key"*"Fields: title,"*) ;;
+    *)
+      echo "Juju configuration descriptions do not expose accepted fields"
+      exit 1
+      ;;
+  esac
