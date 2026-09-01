@@ -3,7 +3,8 @@ from pathlib import Path
 
 from ops import pebble, testing
 
-from charm import COMMAND, CONFIG_PATH, PORT, SERVICE_NAME, VerdaccioK8SCharm
+from charm import VerdaccioK8SCharm
+from workload import COMMAND, CONFIG_PATH, PORT, SERVICE_NAME, WORKLOAD_USER_ID
 
 
 def test_pebble_ready_converges_workload() -> None:
@@ -17,6 +18,7 @@ def test_pebble_ready_converges_workload() -> None:
 
     workload = output.get_container("verdaccio")
     assert workload.plan.services[SERVICE_NAME].command == COMMAND
+    assert workload.plan.services[SERVICE_NAME].user_id == WORKLOAD_USER_ID
     assert workload.service_statuses[SERVICE_NAME] is pebble.ServiceStatus.ACTIVE
     assert output.opened_ports == {testing.TCPPort(PORT)}
     assert output.unit_status == testing.ActiveStatus()
