@@ -1,150 +1,157 @@
-read_config() {
-  sudo -H -u ubuntu juju ssh \
+run_as_workshop() {
+  sudo -H -u workshop "$@"
+}
+
+docker() {
+  run_as_workshop /usr/bin/docker "$@"
+}
+
+juju() {
+  run_as_workshop /var/lib/workshop/sdk/juju-cli/bin/juju "$@"
+}
+
+juju_model() {
+  run_as_workshop env JUJU_MODEL="${MODEL}" /var/lib/workshop/sdk/juju-cli/bin/juju "$@"
+}
+
+kubectl() {
+  run_as_workshop /snap/bin/kubectl "$@"
+}
+
+run_in_workload() {
+  juju ssh \
     --model "${MODEL}" \
     --container verdaccio \
     verdaccio-k8s/0 \
+    "$@"
+}
+
+read_config() {
+  run_in_workload \
     cat /verdaccio/conf/config.yaml
 }
 
 ping_registry() {
-  sudo -H -u ubuntu juju ssh \
-    --model "${MODEL}" \
-    --container verdaccio \
-    verdaccio-k8s/0 \
+  run_in_workload \
     wget -qO- "http://127.0.0.1:${1}/-/ping"
 }
 
 read_verdaccio_pid() {
-  sudo -H -u ubuntu juju ssh \
-    --model "${MODEL}" \
-    --container verdaccio \
-    verdaccio-k8s/0 \
+  run_in_workload \
     'for process in /proc/[0-9]*; do command="$(tr "\0" " " < "${process}/cmdline" 2>/dev/null || true)"; case "${command}" in *"verdaccio --config /verdaccio/conf/config.yaml"*) printf "%s\n" "${process##*/}"; exit 0 ;; esac; done; exit 1'
 }
 
 read_charm_revision() {
-  sudo -H -u ubuntu juju status \
+  juju status \
     --model "${MODEL}" \
     --format json |
     python3 -c 'import json, sys; print(json.load(sys.stdin)["applications"]["verdaccio-k8s"]["charm-rev"])'
 }
 
 read_pod_uid() {
-  sudo -H -u workshop kubectl \
+  kubectl \
     --namespace "${MODEL}" \
     get pod verdaccio-k8s-0 \
     --output=jsonpath='{.metadata.uid}'
 }
 
 deploy_ingress() {
-  routing_mode="${1}"
-  sudo -H -u ubuntu juju deploy \
+  local routing_mode="${1}"
+  juju deploy \
     --model "${MODEL}" \
     traefik-k8s \
     --channel latest/stable \
     --trust \
     --config external_hostname=traefik.local \
     --config "routing_mode=${routing_mode}"
-  sudo -H -u ubuntu env JUJU_MODEL="${MODEL}" juju wait-for \
+  juju_model wait-for \
     application traefik-k8s \
     --query='status=="active"' \
     --timeout 10m
-  sudo -H -u ubuntu juju integrate \
+  juju integrate \
     --model "${MODEL}" \
     verdaccio-k8s:ingress \
     traefik-k8s:ingress
 }
 
 deploy_loki() {
-  sudo -H -u ubuntu juju deploy \
+  juju deploy \
     --model "${MODEL}" \
     loki-k8s \
     --channel 2/stable \
     --trust
-  sudo -H -u ubuntu env JUJU_MODEL="${MODEL}" juju wait-for \
+  juju_model wait-for \
     application loki-k8s \
     --query='status=="active"' \
     --timeout 10m
-  sudo -H -u ubuntu juju integrate \
+  juju integrate \
     --model "${MODEL}" \
     verdaccio-k8s:logging \
     loki-k8s:logging
 }
 
 deploy_prometheus() {
-  sudo -H -u ubuntu juju deploy \
+  juju deploy \
     --model "${MODEL}" \
     prometheus-k8s \
     --channel 2/stable \
     --trust
-  sudo -H -u ubuntu env JUJU_MODEL="${MODEL}" juju wait-for \
+  juju_model wait-for \
     application prometheus-k8s \
     --query='status=="active"' \
     --timeout 10m
-  sudo -H -u ubuntu juju integrate \
+  juju integrate \
     --model "${MODEL}" \
     verdaccio-k8s:metrics-endpoint \
     prometheus-k8s:metrics-endpoint
 }
 
 deploy_tempo() {
-  sudo -H -u ubuntu juju deploy \
+  juju deploy \
     --model "${MODEL}" \
     tempo-k8s \
     --channel latest/beta \
     --trust
-  sudo -H -u ubuntu env JUJU_MODEL="${MODEL}" juju wait-for \
+  juju_model wait-for \
     application tempo-k8s \
     --query='status=="active"' \
     --timeout 10m
-  sudo -H -u ubuntu juju integrate \
+  juju integrate \
     --model "${MODEL}" \
     verdaccio-k8s:tracing \
     tempo-k8s:tracing
 }
 
 read_plan() {
-  sudo -H -u ubuntu juju ssh \
-    --model "${MODEL}" \
-    --container verdaccio \
-    verdaccio-k8s/0 \
+  run_in_workload \
     /charm/bin/pebble plan
 }
 
 read_checks() {
-  sudo -H -u ubuntu juju ssh \
-    --model "${MODEL}" \
-    --container verdaccio \
-    verdaccio-k8s/0 \
+  run_in_workload \
     /charm/bin/pebble checks
 }
 
 read_ingress_relation() {
-  sudo -H -u ubuntu juju show-unit \
+  juju show-unit \
     --model "${MODEL}" \
     traefik-k8s/0 \
     --format yaml
 }
 
 fetch_ingress() {
-  host="${1}"
-  path="${2}"
-  sudo -H -u ubuntu juju ssh \
-    --model "${MODEL}" \
-    --container verdaccio \
-    verdaccio-k8s/0 \
+  local host="${1}"
+  local path="${2}"
+  run_in_workload \
     wget -qO- \
     --header="Host:${host}" \
     "http://traefik-k8s-lb.${MODEL}.svc.cluster.local${path}"
 }
 
 fetch_registry() {
-  port="${1}"
-  path="${2}"
-  sudo -H -u ubuntu juju ssh \
-    --model "${MODEL}" \
-    --container verdaccio \
-    verdaccio-k8s/0 \
+  local port="${1}"
+  local path="${2}"
+  run_in_workload \
     wget -qO- "http://127.0.0.1:${port}${path}"
 }
 
@@ -153,33 +160,25 @@ read_metrics() {
 }
 
 query_prometheus() {
-  sudo -H -u ubuntu juju ssh \
-    --model "${MODEL}" \
-    --container verdaccio \
-    verdaccio-k8s/0 \
+  run_in_workload \
     wget -qO- \
     "http://prometheus-k8s.${MODEL}.svc.cluster.local:9090/api/v1/query?query=verdaccio_http_requests_total%7Bjuju_application%3D%22verdaccio-k8s%22%7D"
 }
 
 query_tempo_traces() {
-  sudo -H -u ubuntu juju ssh \
-    --model "${MODEL}" \
-    --container verdaccio \
-    verdaccio-k8s/0 \
+  run_in_workload \
     wget -qO- \
     "http://tempo-k8s.${MODEL}.svc.cluster.local:3200/api/search?tags=service.name%3Dverdaccio-k8s"
 }
 
 query_loki() {
-  sudo -H -u ubuntu juju ssh \
-    --model "${MODEL}" \
-    --container verdaccio \
-    verdaccio-k8s/0 \
+  run_in_workload \
     wget -qO- \
     "http://loki-k8s.${MODEL}.svc.cluster.local:3100/loki/api/v1/query_range?query=%7Bjuju_application%3D%22verdaccio-k8s%22%7D&limit=20"
 }
 
 publish_package() {
+  local create_user_script
   create_user_script=$(cat <<'EOF'
 const payload = {
   name: "spread-user",
@@ -218,7 +217,7 @@ const payload = {
 });
 EOF
   )
-  sudo -H -u workshop kubectl \
+  kubectl \
     --namespace "${MODEL}" \
     run npm-publisher \
     --image=node:24-bookworm-slim \
@@ -244,6 +243,7 @@ EOF
 }
 
 verify_published_package() {
+  local verify_package_script
   verify_package_script=$(cat <<'EOF'
 (async () => {
   const response = await fetch(
@@ -259,7 +259,7 @@ verify_published_package() {
 });
 EOF
   )
-  sudo -H -u workshop kubectl \
+  kubectl \
     --namespace "${MODEL}" \
     run registry-verifier \
     --image=node:24-bookworm-slim \

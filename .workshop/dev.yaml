@@ -17,6 +17,10 @@ sdks:
   - name: project-charm-dev
 
 actions:
+  spread: |
+    # Spread's strict snap launcher blocks /project and sudo; Workshop provides the isolation.
+    /snap/spread/current/bin/spread "$@"
+
   status: |
     docker info --format 'Docker {{.ServerVersion}}'
     kubectl get nodes

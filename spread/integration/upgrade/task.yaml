@@ -4,18 +4,12 @@ execute: |
   source "${SPREAD_PATH}/spread/integration/helpers.sh"
 
   INITIAL_REVISION="$(read_charm_revision)"
-  sudo -H -u ubuntu juju ssh \
-    --model "${MODEL}" \
-    --container verdaccio \
-    verdaccio-k8s/0 \
+  run_in_workload \
     chmod 0644 /verdaccio/conf/config.yaml
-  test "$(sudo -H -u ubuntu juju ssh \
-    --model "${MODEL}" \
-    --container verdaccio \
-    verdaccio-k8s/0 \
+  test "$(run_in_workload \
     stat -c '%a:%u' /verdaccio/conf/config.yaml)" = "644:584792"
 
-  sudo -H -u ubuntu juju refresh \
+  juju refresh \
     --model "${MODEL}" \
     verdaccio-k8s \
     --path "${CHARM}" \
@@ -25,10 +19,7 @@ execute: |
 
   upgrade_reconciled=false
   for _ in {1..60}; do
-    if FILE_METADATA="$(sudo -H -u ubuntu juju ssh \
-      --model "${MODEL}" \
-      --container verdaccio \
-      verdaccio-k8s/0 \
+    if FILE_METADATA="$(run_in_workload \
       stat -c '%a:%u' /verdaccio/conf/config.yaml 2>/dev/null)" && \
        [ "${FILE_METADATA}" = "600:584792" ] && \
        ping_registry 4873; then

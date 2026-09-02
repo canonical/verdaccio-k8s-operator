@@ -42,6 +42,17 @@ The suite uses the Ops testing context and covers configuration, secrets, worklo
 ingress, storage, and observability. Packed-charm deployment stories live in
 [`spread/integration/`](spread/integration/).
 
+First [build and load the artifacts](#build-and-deploy-locally), then run every deployed story or select one:
+
+```bash
+workshop run dev -- spread
+workshop run dev -- spread local:ubuntu-24.04:spread/integration/default_config
+```
+
+The Workshop action runs Spread with the normal `workshop` account. Spread executes every remote
+hook as root, so every task must source [`helpers.sh`](spread/integration/helpers.sh); it provides
+the single boundary that returns Docker, Juju, and kubectl to the account that owns their state.
+
 The workload application has its own TypeScript build and test workflow. See
 [`verdaccio-app/README.md`](verdaccio-app/README.md).
 

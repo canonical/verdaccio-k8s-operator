@@ -10,6 +10,7 @@ install_snap() {
 install_snap kubectl --classic
 install_snap charmcraft --classic
 install_snap rockcraft --classic
+install_snap spread
 
 case "$(dpkg --print-architecture)" in
   amd64)

@@ -1,24 +1,26 @@
 project: verdaccio-k8s
 
-path: /home/ubuntu/spread/verdaccio-k8s
+path: /home/workshop/spread/verdaccio-k8s
 
 backends:
   local:
     type: adhoc
     allocate: |
-      sudo rm -rf /home/ubuntu/spread/verdaccio-k8s
-      sudo sed -i 's/^\s*#\?\s*\(PermitRootLogin\|PasswordAuthentication\)\>.*/\1 yes/' /etc/ssh/sshd_config
-      if [ -d /etc/ssh/sshd_config.d ]; then
-        echo 'PasswordAuthentication yes' | sudo tee /etc/ssh/sshd_config.d/00-spread.conf
-      fi
-      echo "ubuntu:${SPREAD_PASSWORD}" | sudo chpasswd
+      sudo rm -rf /home/workshop/spread/verdaccio-k8s
+      sudo install -d -m 0755 /etc/ssh/sshd_config.d
+      printf '%s\n' 'PasswordAuthentication yes' |
+        sudo tee /etc/ssh/sshd_config.d/00-spread.conf >/dev/null
+      printf 'workshop:%s\n' "${SPREAD_PASSWORD}" | sudo chpasswd
       sudo systemctl restart ssh
       ADDRESS localhost
     discard: |
-      sudo rm -rf /home/ubuntu/spread/verdaccio-k8s
+      sudo rm -rf /home/workshop/spread/verdaccio-k8s
+      sudo rm -f /etc/ssh/sshd_config.d/00-spread.conf
+      sudo passwd --lock workshop >/dev/null
+      sudo systemctl restart ssh
     systems:
       - ubuntu-24.04:
-          username: ubuntu
+          username: workshop
 
 suites:
   spread/integration/:
@@ -28,38 +30,32 @@ suites:
       CHARM: "${SPREAD_PATH}/verdaccio-k8s_amd64.charm"
       IMAGE: verdaccio:6.10.1
     prepare-each: |
-      if ! sudo docker image inspect "${IMAGE}" >/dev/null; then
+      source "${SPREAD_PATH}/spread/integration/helpers.sh"
+      if ! docker image inspect "${IMAGE}" >/dev/null; then
         echo "Missing ${IMAGE}; run 'workshop run --uid 0 dev -- pack-rock' and 'workshop run dev -- load-rock'" >&2
         exit 1
       fi
-      sudo -H -u ubuntu juju add-model "${MODEL}"
-      sudo -H -u ubuntu juju deploy \
+      juju add-model --no-switch "${MODEL}"
+      juju deploy \
         --model "${MODEL}" \
         "${CHARM}" \
         --resource "verdaccio-image=${IMAGE}"
-      sudo -H -u ubuntu env JUJU_MODEL="${MODEL}" juju wait-for \
+      juju_model wait-for \
         application verdaccio-k8s \
         --query='status=="active"' \
         --timeout 10m
     debug-each: |
-      sudo -H -u ubuntu juju status --model "${MODEL}" --color=false
-      sudo -H -u ubuntu juju ssh \
-        --model "${MODEL}" \
-        --container verdaccio \
-        verdaccio-k8s/0 \
+      source "${SPREAD_PATH}/spread/integration/helpers.sh"
+      juju status --model "${MODEL}" --color=false
+      run_in_workload \
         /charm/bin/pebble services
-      sudo -H -u ubuntu juju ssh \
-        --model "${MODEL}" \
-        --container verdaccio \
-        verdaccio-k8s/0 \
+      run_in_workload \
         /charm/bin/pebble logs verdaccio
-      sudo -H -u ubuntu juju ssh \
-        --model "${MODEL}" \
-        --container verdaccio \
-        verdaccio-k8s/0 \
+      run_in_workload \
         stat -c '%a %U:%G %n' /verdaccio/conf/config.yaml
     restore-each: |
-      sudo -H -u ubuntu juju destroy-model \
+      source "${SPREAD_PATH}/spread/integration/helpers.sh"
+      juju destroy-model \
         --no-prompt \
         --force \
         --destroy-storage \

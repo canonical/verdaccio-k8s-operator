@@ -4,7 +4,7 @@ execute: |
   source "${SPREAD_PATH}/spread/integration/helpers.sh"
 
   INITIAL_PID="$(read_verdaccio_pid)"
-  sudo -H -u ubuntu juju config \
+  juju config \
     --model "${MODEL}" \
     verdaccio-k8s \
     listen-port=4875

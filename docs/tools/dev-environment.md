@@ -83,6 +83,24 @@ workshop run dev -- load-rock
 workshop run --uid 0 dev -- pack-charm
 ```
 
+Run the packed-charm deployment stories after the image is loaded and the charm is packed:
+
+```bash
+workshop run dev -- spread
+# Or select one story:
+workshop run dev -- spread local:ubuntu-24.04:spread/integration/default_config
+```
+
+The Spread snap is strict-only, and its launcher cannot read the `/project` mount or perform the
+local AdHoc backend's SSH bootstrap. The `spread` action therefore runs the snap's packaged static
+Go binary directly inside the Workshop boundary; this depends on the snap's current internal path
+and its `core24` base matching the Ubuntu 24.04 Workshop. Recheck both when either base or the snap
+layout changes.
+
+Existing Workshop instances created before the Spread action must run `workshop refresh dev` to
+install the snap and refresh the action. `reset-cluster` only replaces Kind and Juju state; it does
+not install SDK tools.
+
 Deploy and inspect the resulting pair:
 
 ```bash
@@ -107,8 +125,8 @@ workshop exec --uid 0 dev -- rm -rf parts stage prime overlay
 
 ## Definition layout
 
-- `.workshop/dev.yaml` selects the Ubuntu base and SDKs and defines the
-  `status`, `reset-cluster`, and `pack-charm` actions.
+- `.workshop/dev.yaml` selects the Ubuntu base and SDKs and defines the `status`, `reset-cluster`,
+  `pack-rock`, `load-rock`, `pack-charm`, and `spread` actions.
 - `.workshop/charm-dev/hooks/setup-base` installs Kind and the required snaps.
 - `.workshop/charm-dev/kind.yaml` pins the Kubernetes node image and configures
   kubelet for the nested user namespace.
@@ -129,10 +147,13 @@ examples. Its Juju state is attached through a persistent mount at
 `--destructive-mode`, so the build executes directly in the Ubuntu 24.04
 Workshop container. Change the Workshop base together with the charm base.
 
-**Root is limited to builds.** SDK installation hooks run as root by design.
-Interactive commands, Docker, Kind, and Juju run as the `workshop` user. Only
-the charm packing and cleaning commands use `workshop ... --uid 0`; the action
-returns the charm artifact to `workshop:workshop`.
+**Root is limited to builds; Spread hooks drop back to `workshop`.** SDK installation hooks run as
+root by design, and craft builds and their cleanup use `workshop ... --uid 0`. Spread SSHes in as
+`workshop` but escalates every remote hook to root with `sudo -i`. Every integration task must
+source `spread/integration/helpers.sh`, which drops Docker, Juju, and kubectl back to the account
+that owns their state. Its function shims apply only in the current shell and ordinary subshells;
+commands launched through `env`, `bash -c`, `xargs`, or `find -exec` must call `run_as_workshop`
+explicitly.
 
 **Kind is pinned for nested ZFS.** Workshop's LXD root filesystem is ZFS.
 Kubernetes 1.36 and newer use a cAdvisor filesystem plugin that cannot inspect

@@ -5,7 +5,7 @@ execute: |
 
   publish_package
   INITIAL_POD_UID="$(read_pod_uid)"
-  sudo -H -u workshop kubectl \
+  kubectl \
     --namespace "${MODEL}" \
     delete pod verdaccio-k8s-0
 
@@ -22,8 +22,5 @@ execute: |
   test "${pod_recreated}" = true
 
   verify_published_package
-  sudo -H -u ubuntu juju ssh \
-    --model "${MODEL}" \
-    --container verdaccio \
-    verdaccio-k8s/0 \
+  run_in_workload \
     grep -q '^spread-user:' /verdaccio/storage/htpasswd

@@ -6,7 +6,7 @@ execute: |
   INITIAL_PID="$(read_verdaccio_pid)"
   WEB_CONFIG=$'title: Spread registry\ndarkMode: true\nshowFooter: false'
   SERVER_CONFIG=$'keepAliveTimeout: 30'
-  sudo -H -u ubuntu juju config \
+  juju config \
     --model "${MODEL}" \
     verdaccio-k8s \
     "web-config=${WEB_CONFIG}" \
@@ -31,7 +31,7 @@ execute: |
   LOG_CONFIG=$'type: stdout\nformat: json\nlevel: debug'
   FLAGS_CONFIG=$'searchRemote: true'
   I18N_CONFIG=$'web: en-US'
-  sudo -H -u ubuntu juju config \
+  juju config \
     --model "${MODEL}" \
     verdaccio-k8s \
     max-body-size=20mb \

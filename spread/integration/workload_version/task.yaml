@@ -8,7 +8,7 @@ execute: |
   version_reported=false
   for _ in {1..30}; do
     REPORTED_STATUS="$(
-      sudo -H -u ubuntu juju status --model "${MODEL}" --color=false
+      juju status --model "${MODEL}" --color=false
     )"
     case "${REPORTED_STATUS}" in
       *"${EXPECTED_VERSION}"*) version_reported=true; break ;;

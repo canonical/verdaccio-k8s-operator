@@ -9,22 +9,22 @@ execute: |
   WEBHOOK_TOKEN=spread-webhook-token
   PFX_PASSPHRASE=spread-pfx-passphrase
 
-  UPLINK_SECRET="$(sudo -H -u ubuntu juju add-secret \
+  UPLINK_SECRET="$(juju add-secret \
     --model "${MODEL}" \
     spread-uplink-tokens \
     "tokens=npmjs: ${UPLINK_TOKEN}")"
   WEBHOOK_CREDENTIALS=$'notifications:\n  Authorization: Bearer spread-webhook-token\nnotify:\n  https://hooks.example.test/audit:\n    X-Webhook-Key: spread-webhook-token'
-  WEBHOOK_SECRET="$(sudo -H -u ubuntu juju add-secret \
+  WEBHOOK_SECRET="$(juju add-secret \
     --model "${MODEL}" \
     spread-webhook-credentials \
     "credentials=${WEBHOOK_CREDENTIALS}")"
-  PFX_SECRET="$(sudo -H -u ubuntu juju add-secret \
+  PFX_SECRET="$(juju add-secret \
     --model "${MODEL}" \
     spread-pfx-passphrase \
     "passphrase=${PFX_PASSPHRASE}")"
 
   for SECRET_ID in "${UPLINK_SECRET}" "${WEBHOOK_SECRET}" "${PFX_SECRET}"; do
-    sudo -H -u ubuntu juju grant-secret \
+    juju grant-secret \
       --model "${MODEL}" \
       "${SECRET_ID}" \
       verdaccio-k8s
@@ -34,7 +34,7 @@ execute: |
   NOTIFICATIONS_CONFIG=$'endpoint: https://hooks.example.test/packages\ncontent: published'
   NOTIFY_CONFIG=$'endpoint: https://hooks.example.test/audit\ncontent: audit'
   HTTPS_CONFIG=$'pfx: /verdaccio/storage/server.pfx'
-  sudo -H -u ubuntu juju config \
+  juju config \
     --model "${MODEL}" \
     verdaccio-k8s \
     "uplinks-config=${UPLINKS_CONFIG}" \
@@ -44,7 +44,7 @@ execute: |
     "uplink-tokens-secret-id=${UPLINK_SECRET}" \
     "webhook-credentials-secret-id=${WEBHOOK_SECRET}" \
     "pfx-passphrase-secret-id=${PFX_SECRET}"
-  sudo -H -u ubuntu env JUJU_MODEL="${MODEL}" juju wait-for \
+  juju_model wait-for \
     application verdaccio-k8s \
     --query='status=="active"' \
     --timeout 2m
@@ -62,16 +62,13 @@ execute: |
     sleep 2
   done
   test "${secret_configured}" = true
-  FILE_METADATA="$(sudo -H -u ubuntu juju ssh \
-    --model "${MODEL}" \
-    --container verdaccio \
-    verdaccio-k8s/0 \
+  FILE_METADATA="$(run_in_workload \
     stat -c '%a:%u' /verdaccio/conf/config.yaml)"
   test "${FILE_METADATA}" = "600:584792"
 
-  PUBLIC_CONFIG="$(sudo -H -u ubuntu juju config --model "${MODEL}" verdaccio-k8s)"
-  STATUS_OUTPUT="$(sudo -H -u ubuntu juju status --model "${MODEL}" --color=false)"
-  LOG_OUTPUT="$(sudo -H -u ubuntu juju debug-log \
+  PUBLIC_CONFIG="$(juju config --model "${MODEL}" verdaccio-k8s)"
+  STATUS_OUTPUT="$(juju status --model "${MODEL}" --color=false)"
+  LOG_OUTPUT="$(juju debug-log \
     --model "${MODEL}" \
     --no-tail \
     --include verdaccio-k8s/0)"
@@ -88,7 +85,7 @@ execute: |
   done
 
   PID_BEFORE_ROTATION="$(read_verdaccio_pid)"
-  sudo -H -u ubuntu juju update-secret \
+  juju update-secret \
     --model "${MODEL}" \
     "${UPLINK_SECRET}" \
     "tokens=npmjs: ${ROTATED_UPLINK_TOKEN}"
@@ -115,7 +112,7 @@ execute: |
   test "${secret_rotated}" = true
   ping_registry 4873
 
-  ROTATED_LOG_OUTPUT="$(sudo -H -u ubuntu juju debug-log \
+  ROTATED_LOG_OUTPUT="$(juju debug-log \
     --model "${MODEL}" \
     --no-tail \
     --include verdaccio-k8s/0)"

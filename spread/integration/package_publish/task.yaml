@@ -4,8 +4,5 @@ execute: |
   source "${SPREAD_PATH}/spread/integration/helpers.sh"
 
   publish_package
-  sudo -H -u ubuntu juju ssh \
-    --model "${MODEL}" \
-    --container verdaccio \
-    verdaccio-k8s/0 \
+  run_in_workload \
     test -f /verdaccio/storage/spread-published-package/package.json

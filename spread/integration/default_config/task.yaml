@@ -21,7 +21,7 @@ execute: |
       ;;
   esac
 
-  CONFIG_API="$(sudo -H -u ubuntu juju config --model "${MODEL}" verdaccio-k8s 2>&1)"
+  CONFIG_API="$(juju config --model "${MODEL}" verdaccio-k8s 2>&1)"
   case "${CONFIG_API}" in
     *"YAML mapping for log, without a top-level log key"*"YAML mapping for web, without a top-level web key"*"Fields: title,"*) ;;
     *)

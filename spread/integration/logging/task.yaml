@@ -4,11 +4,11 @@ execute: |
   source "${SPREAD_PATH}/spread/integration/helpers.sh"
 
   deploy_loki
-  sudo -H -u ubuntu juju config \
+  juju config \
     --model "${MODEL}" \
     verdaccio-k8s \
     log-config='{type: stdout, format: json, level: http}'
-  sudo -H -u ubuntu env JUJU_MODEL="${MODEL}" juju wait-for \
+  juju_model wait-for \
     application verdaccio-k8s \
     --query='status=="active"' \
     --timeout 10m
