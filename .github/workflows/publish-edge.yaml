@@ -48,11 +48,79 @@ jobs:
     permissions:
       contents: read
       packages: read # Pull the built rock from GHCR for the Charmhub resource upload.
-    uses: canonical/launchpad-actions/.github/workflows/release-charm.yaml@799f7ca218f01a8375713b1afb99935f9f9e272a
-    secrets: inherit # zizmor: ignore[secrets-inherit] -- reusable workflow declares no named secret contract.
-    with:
-      charm_cache_hit: ${{ needs.charm.outputs.cache_hit }}
-      commit_sha: ${{ github.sha }}
-      channel: latest/edge
-      charm_name: verdaccio-k8s
-      resource_name: verdaccio-image
+    runs-on: ubuntu-24.04
+    env:
+      CHANNEL: latest/edge
+      CHARM_NAME: verdaccio-k8s
+      IMAGE_URL: ghcr.io/${{ github.repository }}:${{ github.sha }}-amd64
+      RESOURCE_NAME: verdaccio-image
+    steps:
+      - name: Check out source
+        uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
+        with:
+          persist-credentials: false
+
+      - name: Restore packed charm
+        uses: actions/cache/restore@caa296126883cff596d87d8935842f9db880ef25 # v5
+        with:
+          path: "*.charm"
+          key: charm-${{ hashFiles('./**') }}
+          fail-on-cache-miss: true
+
+      - name: Install charmcraft
+        run: sudo snap install --classic charmcraft --channel=3.x/stable
+
+      - name: Upload charm revision
+        id: charm
+        env:
+          CHARMCRAFT_AUTH: ${{ secrets.CHARMHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          shopt -s nullglob
+          charm_files=(*.charm)
+          if [ "${#charm_files[@]}" -ne 1 ]; then
+            echo "Expected one packed charm, found ${#charm_files[@]}" >&2
+            exit 1
+          fi
+
+          upload="$(charmcraft upload "${charm_files[0]}" --name "$CHARM_NAME" --format=json)"
+          revision="$(jq -er '.revision' <<<"$upload")"
+          echo "revision=$revision" >> "$GITHUB_OUTPUT"
+
+      - name: Log in to GHCR
+        uses: docker/login-action@dbcb813823bdd20940b903addbd779551569679f # v4
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Upload image resource revision
+        id: resource
+        env:
+          CHARMCRAFT_AUTH: ${{ secrets.CHARMHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          upload="$(charmcraft upload-resource "$CHARM_NAME" "$RESOURCE_NAME" \
+            --image "docker://${IMAGE_URL}" \
+            --format=json)"
+          revision="$(jq -er '.revision' <<<"$upload")"
+          echo "revision=$revision" >> "$GITHUB_OUTPUT"
+
+      - name: Release charm and resource together
+        env:
+          CHARMCRAFT_AUTH: ${{ secrets.CHARMHUB_TOKEN }}
+          CHARM_REVISION: ${{ steps.charm.outputs.revision }}
+          RESOURCE_REVISION: ${{ steps.resource.outputs.revision }}
+        run: |
+          set -euo pipefail
+          charmcraft release "$CHARM_NAME" \
+            --revision "$CHARM_REVISION" \
+            --channel "$CHANNEL" \
+            --resource "${RESOURCE_NAME}:${RESOURCE_REVISION}"
+
+          {
+            echo "## Charmhub release"
+            echo "- Channel: ${CHANNEL}"
+            echo "- Charm revision: ${CHARM_REVISION}"
+            echo "- Resource revision: ${RESOURCE_REVISION}"
+          } >> "$GITHUB_STEP_SUMMARY"
