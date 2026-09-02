@@ -5,15 +5,18 @@ from urllib.parse import urlsplit
 
 import ops
 
-from configuration import CharmConfig
+from configuration import CharmConfig, TracingConfig
 
 CONTAINER_NAME = "verdaccio"
 SERVICE_NAME = "verdaccio"
 HEALTH_CHECK_NAME = "verdaccio-ready"
 HEALTH_CHECK_PATH = "/-/ping"
 CONFIG_PATH = "/verdaccio/conf/config.yaml"
-WORKLOAD_USER_ID = 10001
+WORKLOAD_USER_ID = 584792
 WORKING_DIRECTORY = "/opt/verdaccio"
+INSTRUMENTATION_PATH = "/opt/verdaccio-app/dist/instrumentation.js"
+METRICS_PATH = "/metrics"
+METRICS_PORT = 9464
 
 
 class WorkloadUnavailableError(Exception):
@@ -30,18 +33,28 @@ class WorkloadPlan:
 
 
 def _workload_settings(
-    config: CharmConfig, ingress_url: str | None
+    config: CharmConfig,
+    ingress_url: str | None,
+    tracing: TracingConfig | None,
+    service_name: str,
 ) -> tuple[str, dict[str, str]]:
-    """Use the ingress-owned path for Verdaccio's generated public URLs."""
-    environment = {"HOME": WORKING_DIRECTORY}
-    if ingress_url is None:
-        return config.verdaccio.as_yaml(), environment
+    """Build the complete charm-owned workload configuration and environment."""
+    environment = {
+        "HOME": WORKING_DIRECTORY,
+        "NODE_OPTIONS": f"--require {INSTRUMENTATION_PATH}",
+        "OTEL_SERVICE_NAME": service_name,
+        "VERDACCIO_METRICS_PORT": str(METRICS_PORT),
+    }
+    if tracing is not None:
+        environment.update(tracing.as_environment())
 
-    parsed_url = urlsplit(ingress_url)
-    ingress_path = parsed_url.path.strip("/")
-    url_prefix = f"/{ingress_path}" if ingress_path else None
-    verdaccio = config.verdaccio.model_copy(update={"url_prefix": url_prefix})
-    environment["VERDACCIO_PUBLIC_URL"] = f"{parsed_url.scheme}://{parsed_url.netloc}"
+    verdaccio = config.verdaccio
+    if ingress_url is not None:
+        parsed_url = urlsplit(ingress_url)
+        ingress_path = parsed_url.path.strip("/")
+        url_prefix = f"/{ingress_path}" if ingress_path else None
+        verdaccio = verdaccio.model_copy(update={"url_prefix": url_prefix})
+        environment["VERDACCIO_PUBLIC_URL"] = f"{parsed_url.scheme}://{parsed_url.netloc}"
     return verdaccio.as_yaml(), environment
 
 
@@ -73,7 +86,13 @@ def build_health_check_url(config: CharmConfig) -> str:
     return f"http://{address}:{config.listen_port}{HEALTH_CHECK_PATH}"
 
 
-def build_plan(config: CharmConfig, *, ingress_url: str | None = None) -> WorkloadPlan:
+def build_plan(
+    config: CharmConfig,
+    *,
+    service_name: str,
+    ingress_url: str | None = None,
+    tracing: TracingConfig | None = None,
+) -> WorkloadPlan:
     """Build the complete desired workload state without side effects."""
     check: ops.pebble.CheckDict = {
         "override": "replace",
@@ -90,7 +109,7 @@ def build_plan(config: CharmConfig, *, ingress_url: str | None = None) -> Worklo
     else:
         check["http"] = {"url": build_health_check_url(config)}
 
-    rendered_config, environment = _workload_settings(config, ingress_url)
+    rendered_config, environment = _workload_settings(config, ingress_url, tracing, service_name)
     layer_config: ops.pebble.LayerDict = {
         "summary": "Verdaccio",
         "description": "Pebble layer for Verdaccio",

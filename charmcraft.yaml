@@ -4,7 +4,7 @@ title: Verdaccio
 summary: Operate a Verdaccio npm registry on Kubernetes.
 description: |
   A Kubernetes charm that deploys and operates the Verdaccio private npm
-  registry using the official OCI image.
+  registry using a purpose-built observable OCI image.
 
 base: ubuntu@24.04
 platforms:
@@ -15,6 +15,12 @@ assumes:
   - juju >= 3.6
   - k8s-api
 
+provides:
+  metrics-endpoint:
+    interface: prometheus_scrape
+    description: |
+      Publish the internal Verdaccio metrics endpoint to Prometheus.
+
 requires:
   ingress:
     interface: ingress
@@ -22,10 +28,27 @@ requires:
     optional: true
     description: |
       Integration to expose Verdaccio outside the Juju model.
+  logging:
+    interface: loki_push_api
+    optional: true
+    description: |
+      Forward Verdaccio workload logs to the Canonical Observability Stack.
+  tracing:
+    interface: tracing
+    limit: 1
+    optional: true
+    description: |
+      Export Verdaccio request traces to a Tempo-compatible OTLP endpoint.
 
 charm-libs:
   - lib: traefik-k8s.ingress
     version: "2"
+  - lib: loki-k8s.loki_push_api
+    version: "1"
+  - lib: prometheus-k8s.prometheus_scrape
+    version: "0"
+  - lib: tempo-coordinator-k8s.tracing
+    version: "0"
 
 parts:
   charm:
@@ -43,12 +66,6 @@ config:
         Path for Verdaccio's storage field. The default uses the persistent
         data volume mounted at /verdaccio/storage. Leave empty only when
         store-config configures a storage plugin.
-    plugins-path:
-      type: string
-      default: ""
-      description: |
-        Path for Verdaccio's plugins field. Leave empty to omit the field and
-        use only plugins installed in the workload image.
     web-config:
       type: string
       default: ""
@@ -197,9 +214,9 @@ config:
           enabled: true
       description: |
         YAML mapping for middlewares, without a top-level middlewares key.
-        Each key names a middleware plugin and its value contains
+        Each key names a workload-image middleware plugin and its value contains
         plugin-specific fields. Built-in audit fields include enabled,
-        strict_ssl, and timeout.
+        strict_ssl, and timeout. The metrics key is reserved for the charm.
     filters-config:
       type: string
       default: ""
@@ -262,5 +279,4 @@ containers:
 resources:
   verdaccio-image:
     type: oci-image
-    description: Official Verdaccio OCI image.
-    upstream-source: verdaccio/verdaccio:6
+    description: Verdaccio OCI image built from this repository's Rockcraft project.

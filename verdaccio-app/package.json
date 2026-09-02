@@ -1,0 +1,29 @@
+{
+  "name": "verdaccio-app",
+  "version": "6.10.1",
+  "private": true,
+  "packageManager": "pnpm@11.25.0",
+  "scripts": {
+    "build": "tsc --project tsconfig.json && tsc --project metrics-plugin/tsconfig.json",
+    "test": "tsc --project tsconfig.test.json && node --test test-dist/test/*.test.js",
+    "typecheck": "tsc --noEmit --project tsconfig.json && tsc --noEmit --project metrics-plugin/tsconfig.json"
+  },
+  "dependencies": {
+    "@opentelemetry/api": "1.9.0",
+    "@opentelemetry/exporter-prometheus": "0.222.0",
+    "@opentelemetry/exporter-trace-otlp-proto": "0.222.0",
+    "@opentelemetry/instrumentation": "0.222.0",
+    "@opentelemetry/instrumentation-express": "0.70.0",
+    "@opentelemetry/instrumentation-http": "0.222.0",
+    "@opentelemetry/resources": "2.11.0",
+    "@opentelemetry/sdk-metrics": "2.11.0",
+    "@opentelemetry/sdk-trace-base": "2.11.0",
+    "@opentelemetry/sdk-trace-node": "2.11.0",
+    "verdaccio": "6.10.1"
+  },
+  "devDependencies": {
+    "@types/express": "4.17.25",
+    "@types/node": "24.13.3",
+    "typescript": "5.9.3"
+  }
+}

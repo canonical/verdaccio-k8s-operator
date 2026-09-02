@@ -1,6 +1,14 @@
 venv/
 build/
 *.charm
+*.rock
+verdaccio-app/node_modules/
+verdaccio-app/dist/
+verdaccio-app/metrics-plugin/dist/
+verdaccio-app/test-dist/
+.pnpm-store/
+/bundles/
+/images/
 # charmcraft build artifacts
 parts/
 overlay/

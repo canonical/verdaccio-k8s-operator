@@ -74,13 +74,11 @@ def test_root_ingress_publishes_port_and_public_url(tmp_path: Path) -> None:
     relation = first.get_relation(ingress.id)
     assert relation.local_app_data["port"] == "4873"
     service = first.get_container("verdaccio").plan.services[SERVICE_NAME]
-    assert service.environment == {
-        "HOME": "/opt/verdaccio",
-        "VERDACCIO_PUBLIC_URL": "https://registry.example.test",
-    }
+    assert service.environment["VERDACCIO_PUBLIC_URL"] == "https://registry.example.test"
     rendered = yaml.safe_load(
-        (first.get_container("verdaccio").get_filesystem(ctx) / CONFIG_PATH.lstrip("/"))
-        .read_text()
+        (
+            first.get_container("verdaccio").get_filesystem(ctx) / CONFIG_PATH.lstrip("/")
+        ).read_text()
     )
     assert "url_prefix" not in rendered
     assert second.containers == first.containers
@@ -109,14 +107,16 @@ def test_prefixed_ingress_converges_without_restart(
     second = ctx.run(ctx.on.config_changed(), first)
 
     rendered = yaml.safe_load(
-        (second.get_container("verdaccio").get_filesystem(ctx) / CONFIG_PATH.lstrip("/"))
-        .read_text()
+        (
+            second.get_container("verdaccio").get_filesystem(ctx) / CONFIG_PATH.lstrip("/")
+        ).read_text()
     )
     assert rendered["url_prefix"] == "/test-model-verdaccio-k8s"
     assert second.containers == first.containers
-    assert second.get_relation(ingress.id).local_app_data == first.get_relation(
-        ingress.id
-    ).local_app_data
+    assert (
+        second.get_relation(ingress.id).local_app_data
+        == first.get_relation(ingress.id).local_app_data
+    )
     assert restart_calls == []
 
 
@@ -144,8 +144,7 @@ def test_prefixed_ingress_overrides_configured_public_prefix(tmp_path: Path) -> 
     assert "VERDACCIO_PUBLIC_URL" not in service.environment
     rendered = yaml.safe_load(
         (
-            unrelating.get_container("verdaccio").get_filesystem(ctx)
-            / CONFIG_PATH.lstrip("/")
+            unrelating.get_container("verdaccio").get_filesystem(ctx) / CONFIG_PATH.lstrip("/")
         ).read_text()
     )
     assert rendered["url_prefix"] == "/registry/"

@@ -7,6 +7,7 @@ from typing import Annotated, Literal
 
 import yaml
 from pydantic import (
+    AnyHttpUrl,
     BaseModel,
     BeforeValidator,
     ConfigDict,
@@ -39,6 +40,7 @@ def _as_tuple(value: object) -> object:
 
 
 StringSequence = Annotated[tuple[str, ...], BeforeValidator(_as_tuple)]
+WORKLOAD_PLUGINS_PATH = "/verdaccio/plugins"
 
 
 class ConfigModel(BaseModel):
@@ -266,7 +268,6 @@ class VerdaccioConfig(ConfigModel):
     """Complete user-facing Verdaccio 6 configuration schema."""
 
     storage: str | None = Field(default=None, min_length=1)
-    plugins: str | None = Field(default=None, min_length=1)
     web: Annotated[WebConfig | None, BeforeValidator(_parse_yaml_fragment)] = None
     auth: Annotated[dict[str, JsonValue] | None, BeforeValidator(_parse_yaml_fragment)] = None
     uplinks: Annotated[dict[str, UplinkConfig] | None, BeforeValidator(_parse_yaml_fragment)] = (
@@ -316,6 +317,16 @@ class VerdaccioConfig(ConfigModel):
             HtpasswdConfig.model_validate(auth["htpasswd"])
         return auth
 
+    @field_validator("middlewares")
+    @classmethod
+    def reserve_metrics_middleware(
+        cls, middlewares: dict[str, JsonValue] | None
+    ) -> dict[str, JsonValue] | None:
+        """Reserve the operator-owned metrics middleware configuration key."""
+        if middlewares is not None and "metrics" in middlewares:
+            raise ValueError("metrics middleware is managed by the charm")
+        return middlewares
+
     @model_validator(mode="after")
     def require_storage(self) -> "VerdaccioConfig":
         """Require either local storage or a configured storage plugin."""
@@ -324,8 +335,11 @@ class VerdaccioConfig(ConfigModel):
         return self
 
     def as_yaml(self) -> str:
-        """Serialize the validated model to the exact workload YAML shape."""
+        """Serialize the validated model with mandatory operator-owned middleware."""
         data = self.model_dump(mode="json", by_alias=True, exclude_none=True, exclude_unset=True)
+        middlewares = data.setdefault("middlewares", {})
+        middlewares["metrics"] = {"excludePaths": ["/-/ping"]}
+        data["plugins"] = WORKLOAD_PLUGINS_PATH
         return yaml.safe_dump(data, sort_keys=False, allow_unicode=True)
 
 
@@ -376,6 +390,16 @@ class CharmConfig(ConfigModel):
             return candidate
 
 
+class TracingConfig(ConfigModel):
+    """Validated Tempo relation data consumed by the workload plan."""
+
+    endpoint: AnyHttpUrl
+
+    def as_environment(self) -> dict[str, str]:
+        """Serialize the endpoint at the workload environment boundary."""
+        return {"OTEL_EXPORTER_OTLP_ENDPOINT": str(self.endpoint)}
+
+
 def _optional_string(value: object) -> object:
     """Omit blank scalar options from the generated Verdaccio configuration."""
     return None if value == "" else value
@@ -394,7 +418,6 @@ def config_input(config: Mapping[str, object]) -> dict[str, object]:
     """Assemble a complete Juju snapshot after charmcraft defaults are applied."""
     verdaccio = {
         "storage": _optional_string(config.get("storage-path")),
-        "plugins": _optional_string(config.get("plugins-path")),
         "web": config.get("web-config"),
         "auth": config.get("auth-config"),
         "uplinks": config.get("uplinks-config"),
@@ -430,6 +453,17 @@ def config_input(config: Mapping[str, object]) -> dict[str, object]:
 def load_config(config: Mapping[str, object]) -> CharmConfig:
     """Validate the complete current configuration snapshot."""
     return CharmConfig.model_validate(config_input(config))
+
+
+def load_tracing_config(endpoint: object) -> TracingConfig:
+    """Validate the current tracing endpoint without framework coupling."""
+    return TracingConfig.model_validate({"endpoint": endpoint})
+
+
+def tracing_validation_error_message(error: ValidationError) -> str:
+    """Describe invalid tracing relation fields without exposing their values."""
+    fields = ", ".join(".".join(map(str, item["loc"])) for item in error.errors())
+    return f"Invalid tracing relation: {fields}"
 
 
 def validation_error_message(error: ValidationError) -> str:

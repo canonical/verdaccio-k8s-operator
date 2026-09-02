@@ -25,7 +25,20 @@ actions:
   reset-cluster: |
     .workshop/charm-dev/bin/bootstrap --reset
 
+  pack-rock: |
+    rm -rf parts stage prime overlay
+    rm -f verdaccio_*.rock
+    rockcraft pack --destructive-mode --platform amd64
+    chown workshop:workshop ./*.rock
+
+  load-rock: |
+    rockcraft.skopeo --insecure-policy copy \
+      oci-archive:verdaccio_6.10.1_amd64.rock \
+      docker-daemon:verdaccio:6.10.1
+    kind load docker-image --name dev verdaccio:6.10.1
+
   pack-charm: |
+    rm -rf parts stage prime overlay
     charmcraft pack --destructive-mode --platform amd64 "$@"
     chown workshop:workshop ./*.charm
 

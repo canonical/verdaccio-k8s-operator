@@ -1,0 +1,35 @@
+summary: Tempo receives Verdaccio OTLP request traces
+
+execute: |
+  source "${SPREAD_PATH}/spread/integration/helpers.sh"
+
+  deploy_tempo
+  sudo -H -u ubuntu env JUJU_MODEL="${MODEL}" juju wait-for \
+    application verdaccio-k8s \
+    --query='status=="active"' \
+    --timeout 10m
+
+  tracing_ready=false
+  for _ in {1..90}; do
+    fetch_registry 4873 / >/dev/null || true
+    if PLAN="$(read_plan)" && \
+       CHECKS="$(read_checks)" && \
+       TRACES="$(query_tempo_traces)"; then
+      case "${PLAN}" in
+        *"OTEL_EXPORTER_OTLP_ENDPOINT:"*":4318"*) ;;
+        *) sleep 2; continue ;;
+      esac
+      case "${CHECKS}" in
+        *"verdaccio-ready"*"up"*) ;;
+        *) sleep 2; continue ;;
+      esac
+      case "${TRACES}" in
+        *'"traces":['*'"traceID"'*) ;;
+        *) sleep 2; continue ;;
+      esac
+      tracing_ready=true
+      break
+    fi
+    sleep 2
+  done
+  test "${tracing_ready}" = true

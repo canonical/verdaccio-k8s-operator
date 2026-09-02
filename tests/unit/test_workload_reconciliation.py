@@ -26,6 +26,12 @@ def test_pebble_ready_converges_workload() -> None:
         "verdaccio --config /verdaccio/conf/config.yaml --listen http://0.0.0.0:4873"
     )
     assert workload.plan.services[SERVICE_NAME].user_id == WORKLOAD_USER_ID
+    assert workload.plan.services[SERVICE_NAME].environment == {
+        "HOME": "/opt/verdaccio",
+        "NODE_OPTIONS": "--require /opt/verdaccio-app/dist/instrumentation.js",
+        "OTEL_SERVICE_NAME": "verdaccio-k8s",
+        "VERDACCIO_METRICS_PORT": "9464",
+    }
     assert workload.service_statuses[SERVICE_NAME] is pebble.ServiceStatus.ACTIVE
     assert output.opened_ports == {testing.TCPPort(4873)}
     health_check = workload.plan.checks[HEALTH_CHECK_NAME]
@@ -36,8 +42,11 @@ def test_pebble_ready_converges_workload() -> None:
     assert health_check.threshold == 3
     assert output.unit_status == testing.ActiveStatus()
     config = (workload.get_filesystem(ctx) / CONFIG_PATH.lstrip("/")).read_text()
-    assert yaml.safe_load(config)["log"]["level"] == "info"
-    assert yaml.safe_load(config)["storage"] == "/verdaccio/storage"
+    rendered = yaml.safe_load(config)
+    assert rendered["log"]["level"] == "info"
+    assert rendered["storage"] == "/verdaccio/storage"
+    assert rendered["plugins"] == "/verdaccio/plugins"
+    assert rendered["middlewares"]["metrics"] == {"excludePaths": ["/-/ping"]}
 
 
 def test_missing_container_is_waiting() -> None:
@@ -114,7 +123,7 @@ def test_http_check_failure_and_recovery(tmp_path: Path, monkeypatch: pytest.Mon
     )
     failed_container = replace(started.get_container("verdaccio"), check_infos={failed_check})
     failed = ctx.run(
-        ctx.on.collect_unit_status(),
+        ctx.on.pebble_check_failed(failed_container, info=failed_check),
         replace(started, containers={failed_container}),
     )
 
@@ -129,7 +138,7 @@ def test_http_check_failure_and_recovery(tmp_path: Path, monkeypatch: pytest.Mon
     )
     recovered_container = replace(failed.get_container("verdaccio"), check_infos={recovered_check})
     recovered = ctx.run(
-        ctx.on.collect_unit_status(),
+        ctx.on.pebble_check_recovered(recovered_container, info=recovered_check),
         replace(failed, containers={recovered_container}),
     )
 

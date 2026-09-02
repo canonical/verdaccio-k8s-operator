@@ -3,7 +3,8 @@
 The development environment is defined by `.workshop/dev.yaml`. Workshop
 creates an Ubuntu 24.04 system container, mounts this repository at `/project`,
 and installs the project SDKs. The supported `docker-ce` SDK supplies the
-container runtime; [Kind](https://kind.sigs.k8s.io/) runs Kubernetes in Docker.
+container runtime; the local SDK installs Rockcraft and
+[Kind](https://kind.sigs.k8s.io/) runs Kubernetes in Docker.
 
 ```mermaid
 graph TD
@@ -13,6 +14,7 @@ graph TD
   W --> D["Docker CE SDK"]
   W --> J["Juju CLI SDK"]
   W --> C["project-charm-dev SDK"]
+  W --> R["Rockcraft"]
   C --> K["Kind Kubernetes"]
   C --> T["Charmcraft"]
   D --> K
@@ -37,7 +39,7 @@ workshop run dev -- status
 
 The first launch installs the `uv`, `docker-ce`, and `juju-cli` Store SDKs,
 then the local `project-charm-dev` SDK. The local SDK installs Kind, kubectl,
-Charmcraft; creates the `dev` Kind cluster with the checked-in
+Charmcraft, and Rockcraft; creates the `dev` Kind cluster with the checked-in
 nested-container configuration; installs a local-path storage provisioner;
 uses Juju's built-in `kind-dev` cloud; bootstraps the `dev` controller; and
 selects its `dev` model.
@@ -70,30 +72,37 @@ Run unit tests:
 workshop exec dev -- uv run pytest
 ```
 
-Pack the charm. The action runs as root because destructive-mode builds inside
-the Workshop container, then restores ownership of the resulting artifact:
+Build and load the custom workload Rock before packing the charm. Both builds
+run as root because destructive mode writes directly into the mounted project;
+the actions restore artifact ownership. Loading runs as the normal Workshop
+user because that user owns Docker and Kind:
 
 ```bash
+workshop run --uid 0 dev -- pack-rock
+workshop run dev -- load-rock
 workshop run --uid 0 dev -- pack-charm
 ```
 
-Deploy and inspect it as the normal `workshop` user:
+Deploy and inspect the resulting pair:
 
 ```bash
 workshop exec dev -- \
-  juju deploy ./verdaccio-k8s_amd64.charm --resource verdaccio-image=<image>
+  juju deploy ./verdaccio-k8s_amd64.charm --resource verdaccio-image=verdaccio:6.10.1
 workshop run dev -- status
 ```
 
 
-Use an immutable tag or digest for the existing OCI image reference rather than
-`latest`; pass the reference through the charm resource in the deploy command.
+The Rock manifest and pnpm lock pin the workload inputs. Publish the resulting
+image by immutable tag or digest and attach that exact image as the charm
+resource when releasing through Charmhub.
 
-Destructive builds also leave `parts/`, `stage/`, and `prime/` root-owned in the
-working tree. Clean them with Charmcraft in a root exec:
+Rockcraft and Charmcraft share the `parts/`, `stage/`, `prime/`, and `overlay/`
+directory names. Each pack action removes only those ignored build directories
+before invoking its craft tool, preventing one tool from packing stale state from
+the other. To clean manually:
 
 ```bash
-workshop exec --uid 0 dev -- charmcraft clean --destructive-mode
+workshop exec --uid 0 dev -- rm -rf parts stage prime overlay
 ```
 
 ## Definition layout

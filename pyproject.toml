@@ -3,6 +3,7 @@ name = "verdaccio-k8s"
 version = "0.1.0"
 requires-python = ">=3.10"
 dependencies = [
+    "cosl~=1.10",
     "ops~=3.7",
     "pydantic~=2.12",
     "pyyaml~=6.0",
@@ -29,7 +30,11 @@ source = ["src"]
 show_missing = true
 
 [tool.pytest.ini_options]
-filterwarnings = ["error"]
+filterwarnings = [
+    "error",
+    "ignore:JujuVersion.from_environ:DeprecationWarning",
+    "ignore::DeprecationWarning:charms.tempo_coordinator_k8s.*",
+]
 log_cli = true
 log_cli_level = "INFO"
 pythonpath = ["src", "lib"]
@@ -47,7 +52,7 @@ ignore = ["D105", "D107", "D203", "D213"]
 "tests/*" = ["D100", "D101", "D102", "D103", "D104"]
 
 [tool.codespell]
-skip = ".git,.venv,build,./docs/tools/*,lib,parts,prime,stage,uv.lock"
+skip = ".git,.venv,build,./docs/tools/*,lib,parts,prime,stage,uv.lock,verdaccio-app/pnpm-lock.yaml"
 
 [tool.pyright]
 include = ["src", "tests/unit"]

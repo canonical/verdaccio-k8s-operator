@@ -26,8 +26,12 @@ suites:
     environment:
       MODEL: "spread-$(HOST: date +%s%N)"
       CHARM: "${SPREAD_PATH}/verdaccio-k8s_amd64.charm"
-      IMAGE: verdaccio/verdaccio:6.10.1
+      IMAGE: verdaccio:6.10.1
     prepare-each: |
+      if ! sudo docker image inspect "${IMAGE}" >/dev/null; then
+        echo "Missing ${IMAGE}; run 'workshop run --uid 0 dev -- pack-rock' and 'workshop run dev -- load-rock'" >&2
+        exit 1
+      fi
       sudo -H -u ubuntu juju add-model "${MODEL}"
       sudo -H -u ubuntu juju deploy \
         --model "${MODEL}" \
@@ -74,5 +78,14 @@ exclude:
   - parts
   - prime
   - stage
+  - verdaccio_6.10.1_amd64.rock
+  - verdaccio-app/node_modules
+  - verdaccio-app/dist
+  - verdaccio-app/metrics-plugin/dist
+  - verdaccio-app/test-dist
+  - tmp
+  - .pnpm-store
+  - bundles
+  - images
 
 kill-timeout: 30m

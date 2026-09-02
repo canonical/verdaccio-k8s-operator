@@ -1,0 +1,34 @@
+summary: COS relation forwards healthy Verdaccio workload logs
+
+execute: |
+  source "${SPREAD_PATH}/spread/integration/helpers.sh"
+
+  deploy_loki
+  sudo -H -u ubuntu juju config \
+    --model "${MODEL}" \
+    verdaccio-k8s \
+    log-config='{type: stdout, format: json, level: http}'
+  sudo -H -u ubuntu env JUJU_MODEL="${MODEL}" juju wait-for \
+    application verdaccio-k8s \
+    --query='status=="active"' \
+    --timeout 10m
+
+  logging_ready=false
+  for _ in {1..90}; do
+    ping_registry 4873 >/dev/null || true
+    if CHECKS="$(read_checks)" && \
+       LOKI_LOGS="$(query_loki)"; then
+      case "${CHECKS}" in
+        *"verdaccio-ready"*"up"*) ;;
+        *) sleep 2; continue ;;
+      esac
+      case "${LOKI_LOGS}" in
+        *'"juju_application":"verdaccio-k8s"'*"req: 'GET /-/ping'"*"bytes: 0/3"*) ;;
+        *) sleep 2; continue ;;
+      esac
+      logging_ready=true
+      break
+    fi
+    sleep 2
+  done
+  test "${logging_ready}" = true

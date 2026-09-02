@@ -1,0 +1,10 @@
+{
+  "name": "verdaccio-metrics",
+  "version": "1.0.0",
+  "private": true,
+  "main": "dist/index.js",
+  "dependencies": {
+    "@opentelemetry/api": "1.9.0",
+    "verdaccio": "6.10.1"
+  }
+}

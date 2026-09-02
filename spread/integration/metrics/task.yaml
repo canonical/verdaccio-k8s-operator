@@ -1,0 +1,33 @@
+summary: Prometheus scrapes first-party Verdaccio metrics
+
+execute: |
+  source "${SPREAD_PATH}/spread/integration/helpers.sh"
+
+  deploy_prometheus
+  sudo -H -u ubuntu env JUJU_MODEL="${MODEL}" juju wait-for \
+    application verdaccio-k8s \
+    --query='status=="active"' \
+    --timeout 10m
+
+  metrics_ready=false
+  for _ in {1..90}; do
+    fetch_registry 4873 / >/dev/null || true
+    if METRICS="$(read_metrics)" && PROMETHEUS_METRIC="$(query_prometheus)"; then
+      case "${METRICS}" in
+        *"verdaccio_build_info"*) ;;
+        *) sleep 2; continue ;;
+      esac
+      case "${METRICS}" in
+        *"verdaccio_http_requests_total"*) ;;
+        *) sleep 2; continue ;;
+      esac
+      case "${PROMETHEUS_METRIC}" in
+        *'"status":"success"'*'"juju_application":"verdaccio-k8s"'*'"value":['*) ;;
+        *) sleep 2; continue ;;
+      esac
+      metrics_ready=true
+      break
+    fi
+    sleep 2
+  done
+  test "${metrics_ready}" = true

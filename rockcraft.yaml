@@ -1,0 +1,72 @@
+name: verdaccio
+base: ubuntu@24.04
+version: "6.10.1"
+summary: Verdaccio registry with COS observability
+description: |
+  Verdaccio with first-party Prometheus metrics and OpenTelemetry tracing.
+license: proprietary
+platforms:
+  amd64:
+  arm64:
+run-user: _daemon_
+
+parts:
+  # Stage the full Node.js toolchain for application builds, but prime only the runtime.
+  node-runtime:
+    plugin: npm
+    npm-include-node: true
+    npm-node-version: "24.20.0"
+    source: verdaccio-app/node-runtime
+    source-type: local
+    build-environment:
+      - NPM_CONFIG_IGNORE_SCRIPTS: "true"
+    prime:
+      - bin/node
+
+  verdaccio-app:
+    plugin: nil
+    source: verdaccio-app
+    source-type: local
+    after: [node-runtime]
+    build-environment:
+      - CI: "true"
+      - NPM_CONFIG_IGNORE_SCRIPTS: "true"
+    stage-packages:
+      - ca-certificates
+      - libatomic1
+      - libstdc++6
+      - wget
+    override-build: |
+      set -eux
+      export PATH="${CRAFT_STAGE}/bin:${PATH}"
+      rm -rf dist metrics-plugin/dist test-dist
+
+      npm_prefix="${CRAFT_PART_INSTALL}/.npm-global"
+      npm install --global --prefix "${npm_prefix}" pnpm@11.25.0
+      export PATH="${npm_prefix}/bin:${PATH}"
+      pnpm install --frozen-lockfile
+      pnpm typecheck
+      pnpm test
+      pnpm build
+      pnpm prune --prod
+      rm -rf "${npm_prefix}"
+
+      install -d \
+        "${CRAFT_PART_INSTALL}/opt/verdaccio" \
+        "${CRAFT_PART_INSTALL}/opt/verdaccio-app" \
+        "${CRAFT_PART_INSTALL}/usr/bin" \
+        "${CRAFT_PART_INSTALL}/verdaccio/conf" \
+        "${CRAFT_PART_INSTALL}/verdaccio/plugins" \
+        "${CRAFT_PART_INSTALL}/verdaccio/storage"
+      chown 584792:584792 "${CRAFT_PART_INSTALL}/opt/verdaccio"
+      cp --archive node_modules package.json dist \
+        "${CRAFT_PART_INSTALL}/opt/verdaccio-app/"
+      install -d "${CRAFT_PART_INSTALL}/opt/verdaccio-app/metrics-plugin"
+      cp --archive metrics-plugin/package.json metrics-plugin/dist \
+        "${CRAFT_PART_INSTALL}/opt/verdaccio-app/metrics-plugin/"
+      ln --symbolic \
+        /opt/verdaccio-app/node_modules/.bin/verdaccio \
+        "${CRAFT_PART_INSTALL}/usr/bin/verdaccio"
+      ln --symbolic \
+        /opt/verdaccio-app/metrics-plugin \
+        "${CRAFT_PART_INSTALL}/verdaccio/plugins/verdaccio-metrics"

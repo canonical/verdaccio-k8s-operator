@@ -6,6 +6,7 @@ import yaml
 from ops import pebble, testing
 
 from charm import STORAGE_NAME, VerdaccioK8SCharm
+from configuration import WORKLOAD_PLUGINS_PATH
 from workload import CONFIG_PATH, HEALTH_CHECK_NAME, SERVICE_NAME
 
 
@@ -210,7 +211,6 @@ def test_complete_verdaccio_configuration_is_rendered(tmp_path: Path) -> None:
         mounts={"config": testing.Mount(location="/verdaccio/conf", source=config_dir)},
     )
     source = """storage: /verdaccio/storage/data
-plugins: /verdaccio/plugins
 web:
   title: Private registry
   logo: /verdaccio/storage/logo.svg
@@ -374,7 +374,6 @@ i18n: {web: en-US}
     config.update(
         {
             "storage-path": expected["storage"],
-            "plugins-path": expected["plugins"],
             "url-prefix": expected["url_prefix"],
             "max-body-size": expected["max_body_size"],
             "user-agent": "false",
@@ -383,6 +382,8 @@ i18n: {web: en-US}
             "no-proxy": expected["no_proxy"],
         }
     )
+    expected["plugins"] = WORKLOAD_PLUGINS_PATH
+    expected["middlewares"]["metrics"] = {"excludePaths": ["/-/ping"]}
 
     output = ctx.run(
         ctx.on.config_changed(),
