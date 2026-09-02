@@ -1,0 +1,15 @@
+name: Refresh charm cache
+
+on:
+  schedule:
+    - cron: "0 3 * * 1,4"
+  workflow_dispatch: {}
+
+permissions:
+  contents: read
+
+jobs:
+  refresh:
+    uses: canonical/launchpad-actions/.github/workflows/refresh-charm-cache.yaml@799f7ca218f01a8375713b1afb99935f9f9e272a
+    with:
+      charm_path: "."

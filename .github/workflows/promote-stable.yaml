@@ -1,0 +1,33 @@
+name: Promote to stable
+
+on:
+  workflow_dispatch: {}
+
+permissions:
+  contents: read
+
+concurrency:
+  group: charmhub-publish
+  cancel-in-progress: false
+
+jobs:
+  promote:
+    name: Promote latest/edge to latest/stable
+    runs-on: ubuntu-24.04
+    environment:
+      name: charmhub-stable
+      url: https://charmhub.io/verdaccio-k8s
+    steps:
+      - name: Check out source
+        uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
+        with:
+          persist-credentials: false
+
+      - name: Promote charm and resources
+        uses: canonical/charming-actions/promote-charm@9180b22741d2349858e35e1dcc2fe4e11c3ebf2d # main
+        with:
+          credentials: ${{ secrets.CHARMHUB_TOKEN }}
+          origin-channel: latest/edge
+          destination-channel: latest/stable
+          charm-path: "."
+          charmcraft-channel: 3.x/stable

@@ -1,0 +1,58 @@
+name: Publish to edge
+
+on:
+  push:
+    branches:
+      - main
+  workflow_dispatch: {}
+
+permissions:
+  contents: read
+
+concurrency:
+  group: charmhub-publish
+  cancel-in-progress: false
+
+jobs:
+  ci:
+    name: Validate revision
+    uses: ./.github/workflows/ci.yaml # zizmor: ignore[self-repository] -- GitHub's documented local workflow syntax.
+    with:
+      commit_sha: ${{ github.sha }}
+
+  rock:
+    name: Build rock
+    needs: ci
+    permissions:
+      contents: read
+      packages: write # Push the built rock to this repository's GHCR package.
+    uses: canonical/launchpad-actions/.github/workflows/build-rock.yaml@799f7ca218f01a8375713b1afb99935f9f9e272a
+    with:
+      commit_sha: ${{ github.sha }}
+
+  charm:
+    name: Build charm
+    needs: ci
+    permissions:
+      contents: read
+    uses: canonical/launchpad-actions/.github/workflows/build-charm.yaml@799f7ca218f01a8375713b1afb99935f9f9e272a
+    with:
+      commit_sha: ${{ github.sha }}
+      charm_path: "."
+
+  release:
+    name: Release to latest/edge
+    needs:
+      - rock
+      - charm
+    permissions:
+      contents: read
+      packages: read # Pull the built rock from GHCR for the Charmhub resource upload.
+    uses: canonical/launchpad-actions/.github/workflows/release-charm.yaml@799f7ca218f01a8375713b1afb99935f9f9e272a
+    secrets: inherit # zizmor: ignore[secrets-inherit] -- reusable workflow declares no named secret contract.
+    with:
+      charm_cache_hit: ${{ needs.charm.outputs.cache_hit }}
+      commit_sha: ${{ github.sha }}
+      channel: latest/edge
+      charm_name: verdaccio-k8s
+      resource_name: verdaccio-image

@@ -1,0 +1,98 @@
+name: CI
+
+on:
+  pull_request:
+    branches:
+      - main
+  workflow_call:
+    inputs:
+      commit_sha:
+        description: Commit SHA to check out
+        type: string
+        required: false
+  workflow_dispatch:
+    inputs:
+      commit_sha:
+        description: Commit SHA to check out
+        type: string
+        required: false
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.event.pull_request.number || inputs.commit_sha || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  python:
+    name: Python quality and unit tests
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Check out source
+        uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
+        with:
+          ref: ${{ inputs.commit_sha || github.sha }}
+          persist-credentials: false
+
+      - name: Set up uv and Python
+        uses: astral-sh/setup-uv@fac544c07dec837d0ccb6301d7b5580bf5edae39 # v8.2.0
+        with:
+          python-version: "3.12"
+          enable-cache: true
+          cache-dependency-glob: uv.lock
+
+      - name: Install locked dependencies
+        run: uv sync --locked --all-groups
+
+      - name: Check formatting and linting
+        run: |
+          uv run --no-sync ruff format --check src tests
+          uv run --no-sync ruff check .
+          uv run --no-sync codespell src tests README.md DEVELOPMENT.md charmcraft.yaml rockcraft.yaml .github
+
+      - name: Check types
+        run: uv run --no-sync pyright
+
+      - name: Run unit tests
+        run: |
+          uv run --no-sync coverage run -m pytest
+          uv run --no-sync coverage report
+
+  workload:
+    name: Workload quality and unit tests
+    runs-on: ubuntu-24.04
+    defaults:
+      run:
+        working-directory: verdaccio-app
+    steps:
+      - name: Check out source
+        uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
+        with:
+          ref: ${{ inputs.commit_sha || github.sha }}
+          persist-credentials: false
+
+      - name: Set up pnpm
+        uses: pnpm/action-setup@b906affcce14559ad1aafd4ab0e942779e9f58b1 # v4
+        with:
+          package_json_file: verdaccio-app/package.json
+          run_install: false
+
+      - name: Set up Node.js
+        uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
+        with:
+          node-version: "24.20.0"
+          cache: pnpm
+          cache-dependency-path: verdaccio-app/pnpm-lock.yaml
+
+      - name: Install locked dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Check types
+        run: pnpm typecheck
+
+      - name: Run unit tests
+        run: pnpm test
+
+      - name: Build workload
+        run: pnpm build
