@@ -4,7 +4,9 @@ title: Verdaccio
 summary: Operate a Verdaccio npm registry on Kubernetes.
 description: |
   A Kubernetes charm that deploys and operates the Verdaccio private npm
-  registry using a purpose-built observable OCI image.
+  registry using a purpose-built observable OCI image. The charm supports one
+  unit and blocks scaling above one because each unit has independent local
+  storage.
 
 base: ubuntu@24.04
 platforms:

@@ -360,6 +360,56 @@ def test_reconciliation_is_convergent(tmp_path: Path, monkeypatch: pytest.Monkey
     assert pebble_calls == []
 
 
+def test_multiple_planned_units_block_and_scaling_down_recovers() -> None:
+    ctx = testing.Context(VerdaccioK8SCharm)
+    container = verdaccio_container(can_connect=True)
+    storage = testing.Storage(STORAGE_NAME)
+
+    blocked = ctx.run(
+        ctx.on.config_changed(),
+        testing.State(
+            containers={container},
+            storages={storage},
+            planned_units=2,
+        ),
+    )
+
+    assert blocked.unit_status == testing.BlockedStatus(
+        "Scale down to one unit; local storage cannot be shared"
+    )
+    assert blocked.get_container("verdaccio").plan.services == {}
+    assert blocked.opened_ports == set()
+
+    recovered = ctx.run(
+        ctx.on.update_status(),
+        replace(blocked, planned_units=1),
+    )
+    converged = ctx.run(ctx.on.update_status(), recovered)
+
+    assert recovered.unit_status == testing.ActiveStatus()
+    assert (
+        recovered.get_container("verdaccio").service_statuses[SERVICE_NAME]
+        is pebble.ServiceStatus.ACTIVE
+    )
+    assert converged.containers == recovered.containers
+    assert converged.opened_ports == recovered.opened_ports
+    assert converged.unit_status == recovered.unit_status
+
+
+def test_collect_status_reports_unsafe_scaling_before_workload_health() -> None:
+    ctx = testing.Context(VerdaccioK8SCharm)
+    container = verdaccio_container(can_connect=False)
+
+    output = ctx.run(
+        ctx.on.collect_unit_status(),
+        testing.State(containers={container}, planned_units=2),
+    )
+
+    assert output.unit_status == testing.BlockedStatus(
+        "Scale down to one unit; local storage cannot be shared"
+    )
+
+
 def test_missing_storage_waits_without_mutating_workload() -> None:
     ctx = testing.Context(VerdaccioK8SCharm)
     container = verdaccio_container(can_connect=True)

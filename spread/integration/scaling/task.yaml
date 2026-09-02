@@ -1,0 +1,30 @@
+summary: Unsafe scaling blocks and scaling down recovers
+
+execute: |
+  source "${SPREAD_PATH}/spread/integration/helpers.sh"
+
+  sudo -H -u ubuntu juju scale-application \
+    --model "${MODEL}" \
+    verdaccio-k8s 2
+  sudo -H -u ubuntu env JUJU_MODEL="${MODEL}" juju wait-for \
+    application verdaccio-k8s \
+    --query='status=="blocked"' \
+    --timeout 2m
+
+  BLOCKED_STATUS="$(sudo -H -u ubuntu juju status --model "${MODEL}" --color=false)"
+  case "${BLOCKED_STATUS}" in
+    *"Scale down to one unit; local storage cannot be shared"*) ;;
+    *)
+      echo "Unsafe scaling did not report the local-storage constraint"
+      exit 1
+      ;;
+  esac
+
+  sudo -H -u ubuntu juju scale-application \
+    --model "${MODEL}" \
+    verdaccio-k8s 1
+  sudo -H -u ubuntu env JUJU_MODEL="${MODEL}" juju wait-for \
+    application verdaccio-k8s \
+    --query='status=="active"' \
+    --timeout 2m
+  ping_registry 4873

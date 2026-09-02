@@ -31,6 +31,7 @@ from workload import (
 
 logger = logging.getLogger(__name__)
 STORAGE_NAME = "data"
+SCALING_BLOCK_MESSAGE = "Scale down to one unit; local storage cannot be shared"
 
 
 class VerdaccioK8SCharm(ops.CharmBase):
@@ -61,6 +62,7 @@ class VerdaccioK8SCharm(ops.CharmBase):
         events = (
             self.on.config_changed,
             self.on.upgrade_charm,
+            self.on.update_status,
             self.on.secret_changed,
             self.on[CONTAINER_NAME].pebble_ready,
             self.on[STORAGE_NAME].storage_attached,
@@ -97,6 +99,9 @@ class VerdaccioK8SCharm(ops.CharmBase):
 
     def _reconcile(self, _: ops.EventBase) -> None:
         """Read, validate, plan, and apply the complete desired state."""
+        if self.app.planned_units() > 1:
+            self.unit.status = ops.BlockedStatus(SCALING_BLOCK_MESSAGE)
+            return
         try:
             config = load_secret_backed_config(self.model, self.config)
         except SecretConfigurationError as error:
@@ -143,6 +148,9 @@ class VerdaccioK8SCharm(ops.CharmBase):
 
     def _on_collect_unit_status(self, event: ops.CollectStatusEvent) -> None:
         """Report status from current validated inputs and workload health."""
+        if self.app.planned_units() > 1:
+            event.add_status(ops.BlockedStatus(SCALING_BLOCK_MESSAGE))
+            return
         try:
             load_secret_backed_config(self.model, self.config, refresh=False)
         except SecretConfigurationError as error:
