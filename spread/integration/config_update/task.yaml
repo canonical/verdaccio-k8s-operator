@@ -1,32 +1,24 @@
-summary: Updating configuration reconciles the running registry
+summary: Split configuration updates each restart the running registry
 
 execute: |
   source "${SPREAD_PATH}/spread/integration/helpers.sh"
 
+  INITIAL_PID="$(read_verdaccio_pid)"
   WEB_CONFIG=$'title: Spread registry\ndarkMode: true\nshowFooter: false'
   SERVER_CONFIG=$'keepAliveTimeout: 30'
-  LOG_CONFIG=$'type: stdout\nformat: json\nlevel: debug'
-  FLAGS_CONFIG=$'searchRemote: true'
-  I18N_CONFIG=$'web: en-US'
   sudo -H -u ubuntu juju config \
     --model "${MODEL}" \
     verdaccio-k8s \
-    listen-port=4875 \
-    max-body-size=20mb \
-    user-agent=false \
     "web-config=${WEB_CONFIG}" \
-    "server-config=${SERVER_CONFIG}" \
-    "log-config=${LOG_CONFIG}" \
-    "flags-config=${FLAGS_CONFIG}" \
-    "i18n-config=${I18N_CONFIG}"
+    "server-config=${SERVER_CONFIG}"
 
-  configured_ready=false
+  first_update_ready=false
   for _ in {1..30}; do
-    if UPDATED_CONFIG="$(read_config)"; then
-      case "${UPDATED_CONFIG}" in
-        *"title: Spread registry"*"keepAliveTimeout: 30"*"max_body_size: 20mb"*"user_agent: false"*"format: json"*"level: debug"*"searchRemote: true"*"web: en-US"*)
-          if ping_registry 4875; then
-            configured_ready=true
+    if FIRST_CONFIG="$(read_config)" && FIRST_PID="$(read_verdaccio_pid)"; then
+      case "${FIRST_CONFIG}" in
+        *"title: Spread registry"*"keepAliveTimeout: 30"*)
+          if [ "${FIRST_PID}" != "${INITIAL_PID}" ] && ping_registry 4873; then
+            first_update_ready=true
             break
           fi
           ;;
@@ -34,9 +26,32 @@ execute: |
     fi
     sleep 1
   done
-  test "${configured_ready}" = true
+  test "${first_update_ready}" = true
 
-  if ping_registry 4873; then
-    echo "Verdaccio still listens on the previous port"
-    exit 1
-  fi
+  LOG_CONFIG=$'type: stdout\nformat: json\nlevel: debug'
+  FLAGS_CONFIG=$'searchRemote: true'
+  I18N_CONFIG=$'web: en-US'
+  sudo -H -u ubuntu juju config \
+    --model "${MODEL}" \
+    verdaccio-k8s \
+    max-body-size=20mb \
+    user-agent=false \
+    "log-config=${LOG_CONFIG}" \
+    "flags-config=${FLAGS_CONFIG}" \
+    "i18n-config=${I18N_CONFIG}"
+
+  second_update_ready=false
+  for _ in {1..30}; do
+    if SECOND_CONFIG="$(read_config)" && SECOND_PID="$(read_verdaccio_pid)"; then
+      case "${SECOND_CONFIG}" in
+        *"title: Spread registry"*"keepAliveTimeout: 30"*"max_body_size: 20mb"*"user_agent: false"*"format: json"*"level: debug"*"searchRemote: true"*"web: en-US"*)
+          if [ "${SECOND_PID}" != "${FIRST_PID}" ] && ping_registry 4873; then
+            second_update_ready=true
+            break
+          fi
+          ;;
+      esac
+    fi
+    sleep 1
+  done
+  test "${second_update_ready}" = true

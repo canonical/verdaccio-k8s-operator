@@ -69,43 +69,6 @@ execute: |
     stat -c '%a:%u' /verdaccio/conf/config.yaml)"
   test "${FILE_METADATA}" = "600:584792"
 
-  sudo -H -u ubuntu juju ssh \
-    --model "${MODEL}" \
-    --container verdaccio \
-    verdaccio-k8s/0 \
-    chmod 0644 /verdaccio/conf/config.yaml
-  FILE_METADATA="$(sudo -H -u ubuntu juju ssh \
-    --model "${MODEL}" \
-    --container verdaccio \
-    verdaccio-k8s/0 \
-    stat -c '%a:%u' /verdaccio/conf/config.yaml)"
-  test "${FILE_METADATA}" = "644:584792"
-
-  sudo -H -u ubuntu juju refresh \
-    --model "${MODEL}" \
-    verdaccio-k8s \
-    --path "${CHARM}" \
-    --resource "verdaccio-image=${IMAGE}"
-  sudo -H -u ubuntu env JUJU_MODEL="${MODEL}" juju wait-for \
-    application verdaccio-k8s \
-    --query='status=="active"' \
-    --timeout 2m
-
-  metadata_repaired=false
-  for _ in {1..60}; do
-    FILE_METADATA="$(sudo -H -u ubuntu juju ssh \
-      --model "${MODEL}" \
-      --container verdaccio \
-      verdaccio-k8s/0 \
-      stat -c '%a:%u' /verdaccio/conf/config.yaml)"
-    if [ "${FILE_METADATA}" = "600:584792" ]; then
-      metadata_repaired=true
-      break
-    fi
-    sleep 2
-  done
-  test "${metadata_repaired}" = true
-
   PUBLIC_CONFIG="$(sudo -H -u ubuntu juju config --model "${MODEL}" verdaccio-k8s)"
   STATUS_OUTPUT="$(sudo -H -u ubuntu juju status --model "${MODEL}" --color=false)"
   LOG_OUTPUT="$(sudo -H -u ubuntu juju debug-log \
@@ -124,6 +87,7 @@ execute: |
     esac
   done
 
+  PID_BEFORE_ROTATION="$(read_verdaccio_pid)"
   sudo -H -u ubuntu juju update-secret \
     --model "${MODEL}" \
     "${UPLINK_SECRET}" \
@@ -131,14 +95,16 @@ execute: |
 
   secret_rotated=false
   for _ in {1..60}; do
-    if RENDERED_CONFIG="$(read_config)"; then
+    if RENDERED_CONFIG="$(read_config)" && ROTATED_PID="$(read_verdaccio_pid)"; then
       case "${RENDERED_CONFIG}" in
         *"token: ${ROTATED_UPLINK_TOKEN}"*)
           case "${RENDERED_CONFIG}" in
             *"token: ${UPLINK_TOKEN}"*) ;;
             *)
-              secret_rotated=true
-              break
+              if [ "${ROTATED_PID}" != "${PID_BEFORE_ROTATION}" ]; then
+                secret_rotated=true
+                break
+              fi
               ;;
           esac
           ;;

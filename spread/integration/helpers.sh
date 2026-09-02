@@ -14,6 +14,28 @@ ping_registry() {
     wget -qO- "http://127.0.0.1:${1}/-/ping"
 }
 
+read_verdaccio_pid() {
+  sudo -H -u ubuntu juju ssh \
+    --model "${MODEL}" \
+    --container verdaccio \
+    verdaccio-k8s/0 \
+    'for process in /proc/[0-9]*; do command="$(tr "\0" " " < "${process}/cmdline" 2>/dev/null || true)"; case "${command}" in *"verdaccio --config /verdaccio/conf/config.yaml"*) printf "%s\n" "${process##*/}"; exit 0 ;; esac; done; exit 1'
+}
+
+read_charm_revision() {
+  sudo -H -u ubuntu juju status \
+    --model "${MODEL}" \
+    --format json |
+    python3 -c 'import json, sys; print(json.load(sys.stdin)["applications"]["verdaccio-k8s"]["charm-rev"])'
+}
+
+read_pod_uid() {
+  sudo -H -u workshop kubectl \
+    --namespace "${MODEL}" \
+    get pod verdaccio-k8s-0 \
+    --output=jsonpath='{.metadata.uid}'
+}
+
 deploy_ingress() {
   routing_mode="${1}"
   sudo -H -u ubuntu juju deploy \
@@ -219,4 +241,32 @@ EOF
       npm publish --registry=http://verdaccio-k8s:4873
       test "$(npm view spread-published-package version --registry=http://verdaccio-k8s:4873)" = 1.0.0
     '
+}
+
+verify_published_package() {
+  verify_package_script=$(cat <<'EOF'
+(async () => {
+  const response = await fetch(
+    "http://verdaccio-k8s:4873/spread-published-package",
+  );
+  const metadata = await response.json();
+  if (!response.ok || !metadata.versions?.["1.0.0"]) {
+    throw new Error(`published package unavailable: ${response.status}`);
+  }
+})().catch((error) => {
+  console.error(error);
+  process.exit(1);
+});
+EOF
+  )
+  sudo -H -u workshop kubectl \
+    --namespace "${MODEL}" \
+    run registry-verifier \
+    --image=node:24-bookworm-slim \
+    --restart=Never \
+    --attach \
+    --rm \
+    --quiet \
+    --command -- \
+    node -e "${verify_package_script}"
 }

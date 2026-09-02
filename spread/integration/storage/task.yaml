@@ -1,36 +1,29 @@
-summary: Verdaccio data survives workload container replacement
+summary: Pod recreation retains published packages and registered users
 
 execute: |
   source "${SPREAD_PATH}/spread/integration/helpers.sh"
 
-  sudo -H -u ubuntu juju ssh \
-    --model "${MODEL}" \
-    --container verdaccio \
-    verdaccio-k8s/0 \
-    touch /verdaccio/storage/persistence-marker
-  sudo -H -u ubuntu juju ssh \
-    --model "${MODEL}" \
-    --container verdaccio \
-    verdaccio-k8s/0 \
-    touch /tmp/ephemeral-marker
+  publish_package
+  INITIAL_POD_UID="$(read_pod_uid)"
+  sudo -H -u workshop kubectl \
+    --namespace "${MODEL}" \
+    delete pod verdaccio-k8s-0
 
-  sudo -H -u ubuntu juju ssh --model "${MODEL}" --container verdaccio verdaccio-k8s/0 test -e /verdaccio/storage/persistence-marker
-  sudo -H -u ubuntu juju ssh --model "${MODEL}" --container verdaccio verdaccio-k8s/0 test -e /tmp/ephemeral-marker
-
-  sudo -H -u ubuntu juju ssh \
-    --model "${MODEL}" \
-    --container verdaccio \
-    verdaccio-k8s/0 \
-    kill -TERM 1 || true
-
-  storage_recovered=false
+  pod_recreated=false
   for _ in {1..60}; do
-    if sudo -H -u ubuntu juju ssh --model "${MODEL}" --container verdaccio verdaccio-k8s/0 test -e /verdaccio/storage/persistence-marker 2>/dev/null &&
-       ! sudo -H -u ubuntu juju ssh --model "${MODEL}" --container verdaccio verdaccio-k8s/0 test -e /tmp/ephemeral-marker 2>/dev/null &&
+    if RECREATED_POD_UID="$(read_pod_uid 2>/dev/null)" && \
+       [ "${RECREATED_POD_UID}" != "${INITIAL_POD_UID}" ] && \
        ping_registry 4873; then
-      storage_recovered=true
+      pod_recreated=true
       break
     fi
     sleep 2
   done
-  test "${storage_recovered}" = true
+  test "${pod_recreated}" = true
+
+  verify_published_package
+  sudo -H -u ubuntu juju ssh \
+    --model "${MODEL}" \
+    --container verdaccio \
+    verdaccio-k8s/0 \
+    grep -q '^spread-user:' /verdaccio/storage/htpasswd

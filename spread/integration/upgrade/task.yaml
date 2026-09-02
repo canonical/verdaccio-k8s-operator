@@ -1,0 +1,40 @@
+summary: Refreshing to a new charm revision reconciles the workload
+
+execute: |
+  source "${SPREAD_PATH}/spread/integration/helpers.sh"
+
+  INITIAL_REVISION="$(read_charm_revision)"
+  sudo -H -u ubuntu juju ssh \
+    --model "${MODEL}" \
+    --container verdaccio \
+    verdaccio-k8s/0 \
+    chmod 0644 /verdaccio/conf/config.yaml
+  test "$(sudo -H -u ubuntu juju ssh \
+    --model "${MODEL}" \
+    --container verdaccio \
+    verdaccio-k8s/0 \
+    stat -c '%a:%u' /verdaccio/conf/config.yaml)" = "644:584792"
+
+  sudo -H -u ubuntu juju refresh \
+    --model "${MODEL}" \
+    verdaccio-k8s \
+    --path "${CHARM}" \
+    --resource "verdaccio-image=${IMAGE}"
+  UPGRADED_REVISION="$(read_charm_revision)"
+  test "${UPGRADED_REVISION}" -gt "${INITIAL_REVISION}"
+
+  upgrade_reconciled=false
+  for _ in {1..60}; do
+    if FILE_METADATA="$(sudo -H -u ubuntu juju ssh \
+      --model "${MODEL}" \
+      --container verdaccio \
+      verdaccio-k8s/0 \
+      stat -c '%a:%u' /verdaccio/conf/config.yaml 2>/dev/null)" && \
+       [ "${FILE_METADATA}" = "600:584792" ] && \
+       ping_registry 4873; then
+      upgrade_reconciled=true
+      break
+    fi
+    sleep 2
+  done
+  test "${upgrade_reconciled}" = true

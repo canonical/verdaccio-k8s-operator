@@ -1,0 +1,28 @@
+summary: Listener port changes move the running registry endpoint
+
+execute: |
+  source "${SPREAD_PATH}/spread/integration/helpers.sh"
+
+  INITIAL_PID="$(read_verdaccio_pid)"
+  sudo -H -u ubuntu juju config \
+    --model "${MODEL}" \
+    verdaccio-k8s \
+    listen-port=4875
+
+  listener_ready=false
+  for _ in {1..30}; do
+    if UPDATED_PLAN="$(read_plan)" && UPDATED_PID="$(read_verdaccio_pid)"; then
+      case "${UPDATED_PLAN}" in
+        *"--listen http://0.0.0.0:4875"*"http://127.0.0.1:4875/-/ping"*)
+          if [ "${UPDATED_PID}" != "${INITIAL_PID}" ] && \
+             ping_registry 4875 && \
+             ! ping_registry 4873; then
+            listener_ready=true
+            break
+          fi
+          ;;
+      esac
+    fi
+    sleep 1
+  done
+  test "${listener_ready}" = true
