@@ -4,6 +4,7 @@ from pathlib import Path
 
 import ops
 import pytest
+from helpers import verdaccio_container
 from ops import pebble, testing
 
 from charm import STORAGE_NAME, VerdaccioK8SCharm
@@ -26,7 +27,7 @@ def _logging_relation() -> testing.Relation:
 def test_logging_relation_recovers_with_pebble_and_converges() -> None:
     ctx = testing.Context(VerdaccioK8SCharm)
     logging = _logging_relation()
-    disconnected = testing.Container("verdaccio", can_connect=False)
+    disconnected = verdaccio_container(can_connect=False)
     initial = testing.State(
         leader=True,
         containers={disconnected},
@@ -117,8 +118,7 @@ def test_metrics_relation_publishes_internal_scrape_job_and_converges(
     metrics = _metrics_relation()
     config_dir = tmp_path / "metrics-conf"
     config_dir.mkdir()
-    container = testing.Container(
-        "verdaccio",
+    container = verdaccio_container(
         can_connect=True,
         mounts={"config": testing.Mount(location="/verdaccio/conf", source=config_dir)},
     )
@@ -156,8 +156,7 @@ def test_tracing_relation_updates_and_removes_otlp_environment(
     tracing = _tracing_relation("http://tempo-k8s:4318")
     config_dir = tmp_path / "tracing-conf"
     config_dir.mkdir()
-    container = testing.Container(
-        "verdaccio",
+    container = verdaccio_container(
         can_connect=True,
         mounts={"config": testing.Mount(location="/verdaccio/conf", source=config_dir)},
     )
@@ -204,7 +203,7 @@ def test_tracing_relation_updates_and_removes_otlp_environment(
 def test_invalid_optional_tracing_endpoint_does_not_block_workload() -> None:
     ctx = testing.Context(VerdaccioK8SCharm)
     tracing = _tracing_relation("not-a-url")
-    container = testing.Container("verdaccio", can_connect=True)
+    container = verdaccio_container(can_connect=True)
 
     output = ctx.run(
         ctx.on.relation_changed(tracing, remote_unit=0),
@@ -224,7 +223,7 @@ def test_invalid_optional_tracing_endpoint_does_not_block_workload() -> None:
 def test_follower_ignores_tracing_protocol_before_leader_request() -> None:
     ctx = testing.Context(VerdaccioK8SCharm)
     tracing = _tracing_relation("http://tempo-k8s:9411", protocol="zipkin")
-    container = testing.Container("verdaccio", can_connect=True)
+    container = verdaccio_container(can_connect=True)
 
     output = ctx.run(
         ctx.on.relation_changed(tracing, remote_unit=0),

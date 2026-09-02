@@ -5,6 +5,7 @@ from pathlib import Path
 import ops
 import pytest
 import yaml
+from helpers import verdaccio_container
 from ops import pebble, testing
 
 from charm import STORAGE_NAME, VerdaccioK8SCharm
@@ -30,7 +31,7 @@ def _file_info_with_owner(
 
 def test_pebble_ready_converges_workload() -> None:
     ctx = testing.Context(VerdaccioK8SCharm)
-    container = testing.Container("verdaccio", can_connect=True)
+    container = verdaccio_container(can_connect=True)
     storage = testing.Storage(STORAGE_NAME)
 
     output = ctx.run(
@@ -58,6 +59,7 @@ def test_pebble_ready_converges_workload() -> None:
     assert health_check.timeout == "3s"
     assert health_check.threshold == 3
     assert output.unit_status == testing.ActiveStatus()
+    assert output.workload_version == "v6.10.1"
     config = (workload.get_filesystem(ctx) / CONFIG_PATH.lstrip("/")).read_text()
     rendered = yaml.safe_load(config)
     assert rendered["log"]["level"] == "info"
@@ -66,9 +68,49 @@ def test_pebble_ready_converges_workload() -> None:
     assert rendered["middlewares"]["metrics"] == {"excludePaths": ["/-/ping"]}
 
 
+@pytest.mark.parametrize(
+    ("version_stdout", "version_return_code"),
+    [("", 0), ("", 127)],
+)
+def test_version_probe_failure_does_not_block_config_update(
+    version_stdout: str,
+    version_return_code: int,
+) -> None:
+    ctx = testing.Context(VerdaccioK8SCharm)
+    storage = testing.Storage(STORAGE_NAME)
+    container = verdaccio_container(can_connect=True)
+    first = ctx.run(
+        ctx.on.pebble_ready(container),
+        testing.State(containers={container}, storages={storage}),
+    )
+    failing_probe = verdaccio_container(
+        can_connect=True,
+        version_stdout=version_stdout,
+        version_return_code=version_return_code,
+    )
+    container_with_failed_probe = replace(
+        first.get_container("verdaccio"), execs=failing_probe.execs
+    )
+
+    second = ctx.run(
+        ctx.on.config_changed(),
+        replace(
+            first,
+            config={"listen-port": 8080},
+            containers={container_with_failed_probe},
+        ),
+    )
+
+    service = second.get_container("verdaccio").plan.services[SERVICE_NAME]
+    assert service.command.endswith("--listen http://0.0.0.0:8080")
+    assert second.opened_ports == {testing.TCPPort(8080)}
+    assert second.workload_version == "v6.10.1"
+    assert second.unit_status == testing.ActiveStatus()
+
+
 def test_missing_container_is_waiting() -> None:
     ctx = testing.Context(VerdaccioK8SCharm)
-    container = testing.Container("verdaccio", can_connect=False)
+    container = verdaccio_container(can_connect=False)
     storage = testing.Storage(STORAGE_NAME)
 
     output = ctx.run(
@@ -81,7 +123,7 @@ def test_missing_container_is_waiting() -> None:
 
 def test_collect_status_checks_service_before_http_health() -> None:
     ctx = testing.Context(VerdaccioK8SCharm)
-    container = testing.Container("verdaccio", can_connect=True)
+    container = verdaccio_container(can_connect=True)
     storage = testing.Storage(STORAGE_NAME)
     ready = ctx.run(
         ctx.on.pebble_ready(container),
@@ -113,8 +155,7 @@ def test_http_check_failure_and_recovery(tmp_path: Path, monkeypatch: pytest.Mon
     ctx = testing.Context(VerdaccioK8SCharm)
     config_dir = tmp_path / "conf"
     config_dir.mkdir()
-    container = testing.Container(
-        "verdaccio",
+    container = verdaccio_container(
         can_connect=True,
         mounts={"config": testing.Mount(location="/verdaccio/conf", source=config_dir)},
     )
@@ -167,8 +208,7 @@ def test_upgrade_charm_adds_health_check(tmp_path: Path) -> None:
     ctx = testing.Context(VerdaccioK8SCharm)
     config_dir = tmp_path / "conf"
     config_dir.mkdir()
-    container = testing.Container(
-        "verdaccio",
+    container = verdaccio_container(
         can_connect=True,
         mounts={"config": testing.Mount(location="/verdaccio/conf", source=config_dir)},
     )
@@ -202,8 +242,7 @@ def test_upgrade_charm_repairs_config_metadata_once(
     ctx = testing.Context(VerdaccioK8SCharm)
     config_dir = tmp_path / "conf"
     config_dir.mkdir()
-    container = testing.Container(
-        "verdaccio",
+    container = verdaccio_container(
         can_connect=True,
         mounts={"config": testing.Mount(location="/verdaccio/conf", source=config_dir)},
     )
@@ -264,8 +303,7 @@ def test_reconciliation_is_convergent(tmp_path: Path, monkeypatch: pytest.Monkey
     ctx = testing.Context(VerdaccioK8SCharm)
     config_dir = tmp_path / "conf"
     config_dir.mkdir()
-    container = testing.Container(
-        "verdaccio",
+    container = verdaccio_container(
         can_connect=True,
         mounts={"config": testing.Mount(location="/verdaccio/conf", source=config_dir)},
     )
@@ -317,13 +355,14 @@ def test_reconciliation_is_convergent(tmp_path: Path, monkeypatch: pytest.Monkey
     assert second.containers == first.containers
     assert second.opened_ports == first.opened_ports
     assert second.unit_status == first.unit_status
+    assert second.workload_version == first.workload_version == "v6.10.1"
     assert config_path.stat().st_mtime_ns == fixed_time
     assert pebble_calls == []
 
 
 def test_missing_storage_waits_without_mutating_workload() -> None:
     ctx = testing.Context(VerdaccioK8SCharm)
-    container = testing.Container("verdaccio", can_connect=True)
+    container = verdaccio_container(can_connect=True)
 
     output = ctx.run(ctx.on.config_changed(), testing.State(containers={container}))
 
@@ -334,7 +373,7 @@ def test_missing_storage_waits_without_mutating_workload() -> None:
 
 def test_collect_status_reports_missing_storage() -> None:
     ctx = testing.Context(VerdaccioK8SCharm)
-    container = testing.Container("verdaccio", can_connect=True)
+    container = verdaccio_container(can_connect=True)
 
     output = ctx.run(ctx.on.collect_unit_status(), testing.State(containers={container}))
 
@@ -349,8 +388,7 @@ def test_storage_attached_converges_workload_and_preserves_data(tmp_path: Path) 
     marker.write_text('{"name":"private-package"}')
     config_root = tmp_path / "conf"
     config_root.mkdir()
-    container = testing.Container(
-        "verdaccio",
+    container = verdaccio_container(
         can_connect=True,
         mounts={
             "config": testing.Mount(location="/verdaccio/conf", source=config_root),

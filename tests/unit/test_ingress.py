@@ -4,6 +4,7 @@ from pathlib import Path
 import ops
 import pytest
 import yaml
+from helpers import verdaccio_container
 from ops import testing
 
 from charm import STORAGE_NAME, VerdaccioK8SCharm
@@ -23,8 +24,7 @@ def _ingress_relation(url: str) -> testing.Relation:
 def _ready_state(
     ingress: testing.Relation, *, config_dir: Path, url_prefix: str = ""
 ) -> testing.State:
-    container = testing.Container(
-        "verdaccio",
+    container = verdaccio_container(
         can_connect=True,
         mounts={"config": testing.Mount(location="/verdaccio/conf", source=config_dir)},
     )

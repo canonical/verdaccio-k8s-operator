@@ -1,0 +1,23 @@
+summary: Juju status reports the installed Verdaccio version
+
+execute: |
+  source "${SPREAD_PATH}/spread/integration/helpers.sh"
+
+  EXPECTED_VERSION="${IMAGE#verdaccio:}"
+  REPORTED_STATUS=""
+  version_reported=false
+  for _ in {1..30}; do
+    REPORTED_STATUS="$(
+      sudo -H -u ubuntu juju status --model "${MODEL}" --color=false
+    )"
+    case "${REPORTED_STATUS}" in
+      *"${EXPECTED_VERSION}"*) version_reported=true; break ;;
+    esac
+    sleep 1
+  done
+
+  if [ "${version_reported}" != true ]; then
+    echo "Juju status does not report workload version '${EXPECTED_VERSION}':"
+    echo "${REPORTED_STATUS}"
+    exit 1
+  fi

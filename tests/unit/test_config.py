@@ -3,6 +3,7 @@ from pathlib import Path
 import ops
 import pytest
 import yaml
+from helpers import verdaccio_container
 from ops import pebble, testing
 
 from charm import STORAGE_NAME, VerdaccioK8SCharm
@@ -15,8 +16,7 @@ def test_log_level_change_restarts_service(tmp_path: Path) -> None:
     ctx = testing.Context(VerdaccioK8SCharm)
     config_dir = tmp_path / "conf"
     config_dir.mkdir()
-    container = testing.Container(
-        "verdaccio",
+    container = verdaccio_container(
         can_connect=True,
         mounts={"config": testing.Mount(location="/verdaccio/conf", source=config_dir)},
     )
@@ -47,7 +47,7 @@ def test_log_level_change_restarts_service(tmp_path: Path) -> None:
 
 def test_listener_configuration_updates_service_and_port() -> None:
     ctx = testing.Context(VerdaccioK8SCharm)
-    container = testing.Container("verdaccio", can_connect=True)
+    container = verdaccio_container(can_connect=True)
 
     output = ctx.run(
         ctx.on.config_changed(),
@@ -79,8 +79,7 @@ def test_url_prefix_restarts_service_without_changing_health_path(
     ctx = testing.Context(VerdaccioK8SCharm)
     config_dir = tmp_path / "conf"
     config_dir.mkdir()
-    container = testing.Container(
-        "verdaccio",
+    container = verdaccio_container(
         can_connect=True,
         mounts={"config": testing.Mount(location="/verdaccio/conf", source=config_dir)},
     )
@@ -115,7 +114,7 @@ def test_url_prefix_restarts_service_without_changing_health_path(
 
 def test_blank_uplinks_and_packages_clear_sections() -> None:
     ctx = testing.Context(VerdaccioK8SCharm)
-    container = testing.Container("verdaccio", can_connect=True)
+    container = verdaccio_container(can_connect=True)
 
     output = ctx.run(
         ctx.on.config_changed(),
@@ -135,7 +134,7 @@ def test_blank_uplinks_and_packages_clear_sections() -> None:
 
 def test_store_plugin_can_replace_storage_path() -> None:
     ctx = testing.Context(VerdaccioK8SCharm)
-    container = testing.Container("verdaccio", can_connect=True)
+    container = verdaccio_container(can_connect=True)
 
     output = ctx.run(
         ctx.on.config_changed(),
@@ -155,7 +154,7 @@ def test_store_plugin_can_replace_storage_path() -> None:
 
 def test_numeric_uplink_intervals_and_boolean_trust_proxy_are_rendered() -> None:
     ctx = testing.Context(VerdaccioK8SCharm)
-    container = testing.Container("verdaccio", can_connect=True)
+    container = verdaccio_container(can_connect=True)
 
     output = ctx.run(
         ctx.on.config_changed(),
@@ -186,7 +185,7 @@ def test_numeric_uplink_intervals_and_boolean_trust_proxy_are_rendered() -> None
 
 def test_trailing_dot_fqdn_is_accepted() -> None:
     ctx = testing.Context(VerdaccioK8SCharm)
-    container = testing.Container("verdaccio", can_connect=True)
+    container = verdaccio_container(can_connect=True)
 
     output = ctx.run(
         ctx.on.config_changed(),
@@ -206,8 +205,7 @@ def test_complete_verdaccio_configuration_is_rendered(tmp_path: Path) -> None:
     ctx = testing.Context(VerdaccioK8SCharm)
     config_dir = tmp_path / "conf"
     config_dir.mkdir()
-    container = testing.Container(
-        "verdaccio",
+    container = verdaccio_container(
         can_connect=True,
         mounts={"config": testing.Mount(location="/verdaccio/conf", source=config_dir)},
     )
@@ -401,7 +399,7 @@ i18n: {web: en-US}
 
 def test_pfx_passphrase_is_serialized_to_workload() -> None:
     ctx = testing.Context(VerdaccioK8SCharm)
-    container = testing.Container("verdaccio", can_connect=True)
+    container = verdaccio_container(can_connect=True)
     secret = testing.Secret({"passphrase": "secret"})
     source = "pfx: /verdaccio/storage/server.pfx\n"
 

@@ -4,6 +4,7 @@ from pathlib import Path
 import ops
 import pytest
 import yaml
+from helpers import verdaccio_container
 from ops import testing
 
 from charm import STORAGE_NAME, VerdaccioK8SCharm
@@ -17,7 +18,7 @@ from workload import CONFIG_PATH, SERVICE_NAME
 
 def test_all_credentials_are_loaded_from_secrets() -> None:
     ctx = testing.Context(VerdaccioK8SCharm)
-    container = testing.Container("verdaccio", can_connect=True)
+    container = verdaccio_container(can_connect=True)
     uplink_secret = testing.Secret({"tokens": "npmjs: uplink-token"})
     webhook_secret = testing.Secret(
         {
@@ -80,8 +81,7 @@ def test_secret_changed_rotates_token_once(
     ctx = testing.Context(VerdaccioK8SCharm)
     config_dir = tmp_path / "conf"
     config_dir.mkdir()
-    container = testing.Container(
-        "verdaccio",
+    container = verdaccio_container(
         can_connect=True,
         mounts={"config": testing.Mount(location="/verdaccio/conf", source=config_dir)},
     )
@@ -164,7 +164,7 @@ def test_credentials_in_ordinary_config_are_rejected(config: dict[str, str], fie
         ctx.on.config_changed(),
         testing.State(
             config=config,
-            containers={testing.Container("verdaccio", can_connect=True)},
+            containers={verdaccio_container(can_connect=True)},
         ),
     )
 
@@ -182,7 +182,7 @@ def test_unavailable_secret_blocks_without_exposing_its_id() -> None:
         ctx.on.config_changed(),
         testing.State(
             config={UPLINK_TOKENS_SECRET_OPTION: secret_id},
-            containers={testing.Container("verdaccio", can_connect=True)},
+            containers={verdaccio_container(can_connect=True)},
         ),
     )
 
@@ -201,7 +201,7 @@ def test_invalid_secret_content_blocks_without_exposing_content() -> None:
         ctx.on.collect_unit_status(),
         testing.State(
             config={UPLINK_TOKENS_SECRET_OPTION: secret.id},
-            containers={testing.Container("verdaccio", can_connect=True)},
+            containers={verdaccio_container(can_connect=True)},
             secrets={secret},
         ),
     )
@@ -225,7 +225,7 @@ def test_collect_status_does_not_track_latest_secret_revision() -> None:
             ),
             UPLINK_TOKENS_SECRET_OPTION: secret.id,
         },
-        containers={testing.Container("verdaccio", can_connect=True)},
+        containers={verdaccio_container(can_connect=True)},
         secrets={secret},
     )
 
@@ -300,7 +300,7 @@ def test_secret_target_mismatches_block_without_exposure(
         ctx.on.config_changed(),
         testing.State(
             config=state_config,
-            containers={testing.Container("verdaccio", can_connect=True)},
+            containers={verdaccio_container(can_connect=True)},
             secrets={secret},
         ),
     )
@@ -341,7 +341,7 @@ def test_secret_headers_overlay_multiple_webhooks() -> None:
                 ),
                 WEBHOOK_CREDENTIALS_SECRET_OPTION: secret.id,
             },
-            containers={testing.Container("verdaccio", can_connect=True)},
+            containers={verdaccio_container(can_connect=True)},
             storages={testing.Storage(STORAGE_NAME)},
             secrets={secret},
         ),
@@ -380,7 +380,7 @@ def test_duplicate_credentialed_webhook_endpoint_is_rejected() -> None:
                 ),
                 WEBHOOK_CREDENTIALS_SECRET_OPTION: secret.id,
             },
-            containers={testing.Container("verdaccio", can_connect=True)},
+            containers={verdaccio_container(can_connect=True)},
             secrets={secret},
         ),
     )
@@ -401,7 +401,7 @@ def test_empty_uplink_token_mapping_preserves_omission() -> None:
                 "uplinks-config": "",
                 UPLINK_TOKENS_SECRET_OPTION: secret.id,
             },
-            containers={testing.Container("verdaccio", can_connect=True)},
+            containers={verdaccio_container(can_connect=True)},
             storages={testing.Storage(STORAGE_NAME)},
             secrets={secret},
         ),

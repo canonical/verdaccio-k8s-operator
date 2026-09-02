@@ -143,6 +143,28 @@ class VerdaccioWorkload:
         """Return whether Pebble is currently reachable."""
         return self._container.can_connect()
 
+    def version(self) -> str | None:
+        """Return the version reported by the installed Verdaccio executable, if any."""
+        try:
+            process = self._container.exec(
+                ["verdaccio", "--version"],
+                timeout=30,
+                user_id=WORKLOAD_USER_ID,
+                working_dir=WORKING_DIRECTORY,
+            )
+            stdout, _ = process.wait_output()
+        except (
+            ops.ModelError,
+            ops.pebble.APIError,
+            ops.pebble.ChangeError,
+            ops.pebble.ConnectionError,
+            ops.pebble.ExecError,
+            ops.pebble.TimeoutError,
+        ) as error:
+            raise WorkloadUnavailableError(str(error)) from error
+
+        return stdout.strip() or None
+
     def apply(self, plan: WorkloadPlan) -> None:
         """Apply only differences between current and desired workload state."""
         try:

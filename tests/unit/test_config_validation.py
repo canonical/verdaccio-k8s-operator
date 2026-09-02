@@ -1,3 +1,4 @@
+from helpers import verdaccio_container
 from ops import testing
 
 from charm import VerdaccioK8SCharm
@@ -5,7 +6,7 @@ from charm import VerdaccioK8SCharm
 
 def test_invalid_config_blocks_without_mutating_workload() -> None:
     ctx = testing.Context(VerdaccioK8SCharm)
-    container = testing.Container("verdaccio", can_connect=True)
+    container = verdaccio_container(can_connect=True)
 
     output = ctx.run(
         ctx.on.config_changed(),
@@ -24,7 +25,7 @@ def test_invalid_config_blocks_without_mutating_workload() -> None:
 
 def test_missing_storage_blocks_without_mutating_workload() -> None:
     ctx = testing.Context(VerdaccioK8SCharm)
-    container = testing.Container("verdaccio", can_connect=True)
+    container = verdaccio_container(can_connect=True)
 
     output = ctx.run(
         ctx.on.config_changed(),
@@ -40,7 +41,7 @@ def test_missing_storage_blocks_without_mutating_workload() -> None:
 
 def test_invalid_yaml_blocks_without_mutating_workload() -> None:
     ctx = testing.Context(VerdaccioK8SCharm)
-    container = testing.Container("verdaccio", can_connect=True)
+    container = verdaccio_container(can_connect=True)
 
     output = ctx.run(
         ctx.on.config_changed(),
@@ -53,7 +54,7 @@ def test_invalid_yaml_blocks_without_mutating_workload() -> None:
 
 def test_collect_status_reports_nested_configuration_error() -> None:
     ctx = testing.Context(VerdaccioK8SCharm)
-    container = testing.Container("verdaccio", can_connect=True)
+    container = verdaccio_container(can_connect=True)
 
     output = ctx.run(
         ctx.on.collect_unit_status(),
@@ -70,7 +71,7 @@ def test_collect_status_reports_nested_configuration_error() -> None:
 
 def test_all_numeric_non_ip_listen_address_is_rejected() -> None:
     ctx = testing.Context(VerdaccioK8SCharm)
-    container = testing.Container("verdaccio", can_connect=True)
+    container = verdaccio_container(can_connect=True)
 
     output = ctx.run(
         ctx.on.config_changed(),
@@ -83,7 +84,7 @@ def test_all_numeric_non_ip_listen_address_is_rejected() -> None:
 
 def test_ingress_unsupported_maximum_port_is_blocked() -> None:
     ctx = testing.Context(VerdaccioK8SCharm)
-    container = testing.Container("verdaccio", can_connect=True)
+    container = verdaccio_container(can_connect=True)
 
     output = ctx.run(
         ctx.on.config_changed(),
@@ -97,7 +98,7 @@ def test_ingress_unsupported_maximum_port_is_blocked() -> None:
 
 def test_metrics_middleware_override_is_rejected() -> None:
     ctx = testing.Context(VerdaccioK8SCharm)
-    container = testing.Container("verdaccio", can_connect=True)
+    container = verdaccio_container(can_connect=True)
 
     output = ctx.run(
         ctx.on.config_changed(),

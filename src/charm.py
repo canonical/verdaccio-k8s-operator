@@ -131,6 +131,15 @@ class VerdaccioK8SCharm(ops.CharmBase):
         except WorkloadUnavailableError as error:
             logger.info("Verdaccio container is not ready: %s", error)
             self.unit.status = ops.WaitingStatus("Waiting for Verdaccio container")
+            return
+
+        try:
+            workload_version = self._workload.version()
+        except WorkloadUnavailableError as error:
+            logger.warning("Could not read the Verdaccio version: %s", error)
+        else:
+            if workload_version is not None:
+                self.unit.set_workload_version(workload_version)
 
     def _on_collect_unit_status(self, event: ops.CollectStatusEvent) -> None:
         """Report status from current validated inputs and workload health."""
