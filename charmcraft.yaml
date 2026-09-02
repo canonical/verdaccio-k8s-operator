@@ -88,6 +88,8 @@ config:
         authentication plugin. Built-in htpasswd fields: file, max_users,
         algorithm (bcrypt, md5, sha1, or crypt), rounds (4-31), and
         slow_verify_ms.
+        Third-party authentication plugins must already exist in the workload
+        OCI image; the charm does not install them.
     uplinks-config:
       type: string
       default: |
@@ -205,6 +207,8 @@ config:
       description: |
         YAML mapping for store, without a top-level store key. Each key names
         a storage plugin and its value contains plugin-specific fields.
+        Third-party storage plugins must already exist in the workload OCI
+        image; the charm does not install them.
     notifications-config:
       type: string
       default: ""
@@ -237,6 +241,8 @@ config:
         Each key names a workload-image middleware plugin and its value contains
         plugin-specific fields. Built-in audit fields include enabled,
         strict_ssl, and timeout. The metrics key is reserved for the charm.
+        Third-party middleware plugins must already exist in the workload OCI
+        image; the charm does not install them.
     filters-config:
       type: string
       default: ""
@@ -244,6 +250,8 @@ config:
         YAML mapping for filters, without a top-level filters key. Each key
         names a filter plugin. Package-filter fields include minAgeDays,
         dateThreshold, block, allow, and replace.
+        Third-party filter plugins must already exist in the workload OCI
+        image; the charm does not install them.
     log-config:
       type: string
       default: |

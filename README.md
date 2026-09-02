@@ -49,6 +49,18 @@ juju config verdaccio-k8s \
   log-config='{type: stdout, format: json, level: info}'
 ```
 
+### Third-party plugins
+
+`auth-config`, `store-config`, `middlewares-config`, and `filters-config` accept third-party
+Verdaccio plugin entries. These options only configure plugins: the charm never downloads or
+installs plugin packages. The OCI image supplied through the `verdaccio-image` resource must
+already contain every configured plugin under `/verdaccio/plugins`.
+
+To use a third-party plugin, build a custom image containing the plugin and its runtime
+dependencies, then deploy or refresh the charm with that image as `verdaccio-image`. See
+[`verdaccio-app/README.md`](verdaccio-app/README.md#adding-a-plugin-or-middleware) for the image
+layout and build requirements.
+
 Important defaults are:
 
 | Setting | Default |

@@ -39,6 +39,11 @@ not open port 9464 through the workload service.
 
 ## Adding a plugin or middleware
 
+The charm never downloads or installs plugin packages. Any third-party plugin named by
+`auth-config`, `store-config`, `middlewares-config`, or `filters-config` must be included in the
+OCI image under `/verdaccio/plugins` and supplied to the charm through the `verdaccio-image`
+resource.
+
 Keep operator-owned plugins below this directory. Each plugin must:
 
 1. Have its own `package.json`, TypeScript source, strict `tsconfig.json`, and focused
