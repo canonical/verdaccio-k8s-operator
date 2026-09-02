@@ -88,12 +88,28 @@ async function shutdown(): Promise<void> {
   await Promise.all(pending);
 }
 
+const SHUTDOWN_TIMEOUT_MS = 5_000;
+
+async function shutdownAndTerminate(signal: NodeJS.Signals): Promise<void> {
+  let timeout: NodeJS.Timeout | undefined;
+  const deadline = new Promise<void>((resolve) => {
+    timeout = setTimeout(resolve, SHUTDOWN_TIMEOUT_MS);
+    timeout.unref();
+  });
+  try {
+    await Promise.race([shutdown(), deadline]);
+  } catch {
+    // Termination must proceed even when an exporter rejects its shutdown.
+  } finally {
+    if (timeout !== undefined) {
+      clearTimeout(timeout);
+    }
+    process.kill(process.pid, signal);
+  }
+}
+
 for (const signal of ["SIGINT", "SIGTERM"] as const) {
   process.once(signal, () => {
-    void shutdown().finally(() => {
-      if (process.listenerCount(signal) === 0) {
-        process.kill(process.pid, signal);
-      }
-    });
+    void shutdownAndTerminate(signal);
   });
 }

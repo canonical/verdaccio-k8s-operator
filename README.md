@@ -115,6 +115,38 @@ matching option. The exact secret content schemas are documented in
 Invalid public or secret-backed configuration places the unit in a blocked state and identifies
 the affected option without including its value.
 
+## Management actions
+
+`manage-user` operates the built-in `htpasswd` backend. Verdaccio does not distinguish an
+administrator role: `admin` is a conventional username, while authorization for every account is
+defined by `packages-config`.
+
+```bash
+juju run verdaccio-k8s/0 manage-user operation=create username=admin
+juju run verdaccio-k8s/0 manage-user operation=reset-password username=admin
+juju run verdaccio-k8s/0 manage-user operation=list
+juju run verdaccio-k8s/0 manage-user operation=remove username=admin
+```
+
+Create and reset operations generate a password and return it in the action results. Juju persists
+action results in operation history, where the password remains visible to users with model read
+access; treat that history as credential-bearing and transfer the password to an appropriate
+secret store immediately. User management is rejected when `htpasswd` is not the only configured
+authentication plugin.
+
+`manage-token` reports the API and web token modes. Verdaccio does not provide individual token
+revocation; global revocation rotates the local-storage signing secret and invalidates every API
+and web token.
+
+```bash
+juju run verdaccio-k8s/0 manage-token operation=status
+juju run verdaccio-k8s/0 manage-token operation=revoke-all confirm=true
+```
+
+Global revocation is available only with Verdaccio's local storage backend. Every mutating user
+operation and global token revocation temporarily stops the registry while its persistent files
+are changed, then restarts it; clients experience a brief service interruption.
+
 ## Integrations
 
 | Endpoint | Direction | Purpose |

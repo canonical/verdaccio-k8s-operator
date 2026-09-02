@@ -1,0 +1,105 @@
+summary: User and token actions manage a deployed registry
+
+execute: |
+  source "${SPREAD_PATH}/spread/integration/helpers.sh"
+
+  action_result() {
+    local payload="${1}"
+    local key="${2}"
+    printf '%s' "${payload}" |
+      python3 -c 'import json, sys; item = next(iter(json.load(sys.stdin).values())); print(item["results"][sys.argv[1]])' "${key}"
+  }
+
+  run_action() {
+    juju run \
+      --model "${MODEL}" \
+      verdaccio-k8s/0 \
+      "$@" \
+      --format=json
+  }
+
+  login_user() {
+    local username="${1}"
+    local password="${2}"
+    kubectl --namespace "${MODEL}" exec verdaccio-k8s-0 --container verdaccio -- \
+      env MANAGED_USERNAME="${username}" MANAGED_PASSWORD="${password}" \
+      /bin/node -e '
+        const username = process.env.MANAGED_USERNAME;
+        const password = process.env.MANAGED_PASSWORD;
+        const authorization = Buffer.from(`${username}:${password}`).toString("base64");
+        fetch(`http://127.0.0.1:4873/-/user/org.couchdb.user:${username}`, {
+          method: "PUT",
+          headers: {
+            authorization: `Basic ${authorization}`,
+            "content-type": "application/json",
+          },
+          body: JSON.stringify({name: username, password}),
+        }).then(async (response) => {
+          const body = await response.json();
+          if (!response.ok || !body.token) {
+            throw new Error(`login failed: ${response.status}`);
+          }
+          console.log(body.token);
+        }).catch((error) => {
+          console.error(error.message);
+          process.exit(1);
+        });
+      '
+  }
+
+  verify_token() {
+    local token="${1}"
+    kubectl --namespace "${MODEL}" exec verdaccio-k8s-0 --container verdaccio -- \
+      env MANAGED_TOKEN="${token}" \
+      /bin/node -e '
+        fetch("http://127.0.0.1:4873/-/user/org.couchdb.user:admin", {
+          headers: {authorization: `Bearer ${process.env.MANAGED_TOKEN}`},
+        }).then(async (response) => {
+          const body = await response.json();
+          if (!response.ok || body.ok !== "you are authenticated as \u0027admin\u0027") {
+            throw new Error(`token rejected: ${response.status}`);
+          }
+        }).catch((error) => {
+          console.error(error.message);
+          process.exit(1);
+        });
+      '
+  }
+
+  CREATE_OUTPUT="$(run_action manage-user operation=create username=admin)"
+  INITIAL_PASSWORD="$(action_result "${CREATE_OUTPUT}" password)"
+  test -n "${INITIAL_PASSWORD}"
+  INITIAL_TOKEN="$(login_user admin "${INITIAL_PASSWORD}")"
+  verify_token "${INITIAL_TOKEN}"
+
+  LIST_OUTPUT="$(run_action manage-user operation=list)"
+  test "$(action_result "${LIST_OUTPUT}" users)" = '["admin"]'
+
+  RESET_OUTPUT="$(run_action manage-user operation=reset-password username=admin)"
+  RESET_PASSWORD="$(action_result "${RESET_OUTPUT}" password)"
+  test -n "${RESET_PASSWORD}"
+  test "${RESET_PASSWORD}" != "${INITIAL_PASSWORD}"
+  if login_user admin "${INITIAL_PASSWORD}"; then
+    echo "The previous password remained valid after reset" >&2
+    exit 1
+  fi
+  RESET_TOKEN="$(login_user admin "${RESET_PASSWORD}")"
+  verify_token "${RESET_TOKEN}"
+
+  STATUS_OUTPUT="$(run_action manage-token operation=status)"
+  test "$(action_result "${STATUS_OUTPUT}" api-token-mode)" = legacy
+  run_action manage-token operation=revoke-all confirm=true
+  if verify_token "${RESET_TOKEN}"; then
+    echo "A token remained valid after global revocation" >&2
+    exit 1
+  fi
+
+  run_action manage-user operation=remove username=admin
+  REMOVED_LIST_OUTPUT="$(run_action manage-user operation=list)"
+  test "$(action_result "${REMOVED_LIST_OUTPUT}" users)" = '[]'
+
+  juju_model wait-for \
+    application verdaccio-k8s \
+    --query='status=="active"' \
+    --timeout 5m
+  read_metrics >/dev/null

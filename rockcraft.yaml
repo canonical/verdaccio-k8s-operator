@@ -59,7 +59,7 @@ parts:
         "${CRAFT_PART_INSTALL}/verdaccio/plugins" \
         "${CRAFT_PART_INSTALL}/verdaccio/storage"
       chown 584792:584792 "${CRAFT_PART_INSTALL}/opt/verdaccio"
-      cp --archive node_modules package.json dist \
+      cp --archive node_modules package.json dist management.mjs \
         "${CRAFT_PART_INSTALL}/opt/verdaccio-app/"
       install -d "${CRAFT_PART_INSTALL}/opt/verdaccio-app/metrics-plugin"
       cp --archive metrics-plugin/package.json metrics-plugin/dist \

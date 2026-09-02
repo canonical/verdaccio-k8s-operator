@@ -42,6 +42,41 @@ requires:
     description: |
       Export Verdaccio request traces to a Tempo-compatible OTLP endpoint.
 
+actions:
+  manage-user:
+    description: |
+      Create, reset, remove, or list Verdaccio htpasswd users. Create and
+      reset-password generate a password and return it in Juju's persisted
+      action results, which remain visible to model readers. Mutating operations
+      temporarily stop and restart the registry. Verdaccio has no separate
+      administrator role; authorization is defined by packages-config.
+    params:
+      operation:
+        type: string
+        enum: [create, reset-password, remove, list]
+        description: User operation to perform.
+      username:
+        type: string
+        description: User to create, reset, or remove. Omit for list.
+    required: [operation]
+    additionalProperties: false
+  manage-token:
+    description: |
+      Report token settings or revoke every Verdaccio API and web token by
+      rotating the local-storage signing secret. Revocation temporarily stops
+      and restarts the registry.
+    params:
+      operation:
+        type: string
+        enum: [status, revoke-all]
+        description: Token operation to perform.
+      confirm:
+        type: boolean
+        default: false
+        description: Must be true when operation is revoke-all.
+    required: [operation]
+    additionalProperties: false
+
 charm-libs:
   - lib: traefik-k8s.ingress
     version: "2"
