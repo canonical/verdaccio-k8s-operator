@@ -23,14 +23,46 @@ OpenTelemetry tracing.
 The charm requires Juju 3.6 or newer on a Kubernetes cloud. Its manifests target `amd64` and
 `arm64`; the checked-in local build workflow produces `amd64` artifacts.
 
-## Getting started
+## Deploy
 
-The charm and its OCI image are built together from this repository. Follow
-[`DEVELOPMENT.md`](DEVELOPMENT.md) to create the local Kubernetes environment, build both
-artifacts, and deploy them.
+First use [`DEVELOPMENT.md`](DEVELOPMENT.md) to prepare the local Kubernetes environment and
+build the charm and OCI image. Deploy both artifacts to the current Juju model and request a
+1 GiB persistent volume:
 
-The default registry listens on port `4873` inside the model. Relate the `ingress` endpoint to an
-Ingress v2 provider such as `traefik-k8s` to publish it outside the model.
+```bash
+juju deploy ./verdaccio-k8s_amd64.charm \
+  --resource verdaccio-image=verdaccio:6.10.1 \
+  --storage data=1G
+juju wait-for application verdaccio-k8s \
+  --query='status=="active"' \
+  --timeout 10m
+juju storage
+```
+
+The `data` filesystem is mounted at `/verdaccio/storage` for packages, metadata, and credentials.
+The charm remains waiting until this storage is attached.
+
+### Ingress
+
+Deploy Traefik with subdomain routing, wait for it to become active, and integrate it with the
+registry:
+
+```bash
+juju deploy traefik-k8s \
+  --channel latest/stable \
+  --trust \
+  --config external_hostname=traefik.local \
+  --config routing_mode=subdomain
+juju wait-for application traefik-k8s \
+  --query='status=="active"' \
+  --timeout 10m
+juju integrate verdaccio-k8s:ingress traefik-k8s:ingress
+juju status --relations
+```
+
+For a model named `dev`, this publishes Verdaccio at
+`http://dev-verdaccio-k8s.traefik.local/`. The hostname must resolve to the Traefik load balancer
+from the client network. Use `/-/ping` as a readiness endpoint; a healthy registry returns `{}`.
 
 ## Configuration
 
