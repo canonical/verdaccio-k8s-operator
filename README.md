@@ -3,7 +3,10 @@
   Verdaccio Kubernetes operator
 </h1>
 
-`verdaccio-k8s` is a [Juju](https://juju.is/) charm that deploys and operates a
+[![Charmhub](https://charmhub.io/verdaccio-k8s/badge.svg)](https://charmhub.io/verdaccio-k8s)
+
+[`verdaccio-k8s`](https://charmhub.io/verdaccio-k8s) is a published
+[Juju](https://juju.is/) charm that deploys and operates a
 [Verdaccio](https://verdaccio.org/) private npm registry on Kubernetes. The repository also
 builds the workload OCI image: Verdaccio 6.10.1 with first-party Prometheus metrics and
 OpenTelemetry tracing.
@@ -21,17 +24,16 @@ OpenTelemetry tracing.
 - Change-aware Pebble reconciliation and an HTTP readiness check at `/-/ping`.
 
 The charm requires Juju 3.6 or newer on a Kubernetes cloud. Its manifests target `amd64` and
-`arm64`; the checked-in local build workflow produces `amd64` artifacts.
+`arm64`; the current Charmhub release and checked-in local build workflow provide `amd64`.
 
 ## Deploy
 
-First use [`DEVELOPMENT.md`](DEVELOPMENT.md) to prepare the local Kubernetes environment and
-build the charm and OCI image. Deploy both artifacts to the current Juju model and request a
-1 GiB persistent volume:
+Deploy the published charm from [Charmhub](https://charmhub.io/verdaccio-k8s) on the edge
+channel and request a 1 GiB persistent volume:
 
 ```bash
-juju deploy ./verdaccio-k8s_amd64.charm \
-  --resource verdaccio-image=verdaccio:6.10.1 \
+juju deploy verdaccio-k8s \
+  --channel latest/edge \
   --storage data=1G
 juju wait-for application verdaccio-k8s \
   --query='status=="active"' \
