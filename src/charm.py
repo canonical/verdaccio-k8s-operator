@@ -13,13 +13,13 @@ from charms.tempo_coordinator_k8s.v0.tracing import (
 from charms.traefik_k8s.v2.ingress import IngressPerAppRequirer
 from pydantic import ValidationError
 
-from configuration import (
+from config import (
     TracingConfig,
-    load_config,
     load_tracing_config,
     tracing_validation_error_message,
     validation_error_message,
 )
+from secret_config import SecretConfigurationError, load_secret_backed_config
 from workload import (
     CONTAINER_NAME,
     METRICS_PATH,
@@ -61,6 +61,7 @@ class VerdaccioK8SCharm(ops.CharmBase):
         events = (
             self.on.config_changed,
             self.on.upgrade_charm,
+            self.on.secret_changed,
             self.on[CONTAINER_NAME].pebble_ready,
             self.on[STORAGE_NAME].storage_attached,
             self.on[CONTAINER_NAME].pebble_check_failed,
@@ -97,7 +98,10 @@ class VerdaccioK8SCharm(ops.CharmBase):
     def _reconcile(self, _: ops.EventBase) -> None:
         """Read, validate, plan, and apply the complete desired state."""
         try:
-            config = load_config(self.config)
+            config = load_secret_backed_config(self.model, self.config)
+        except SecretConfigurationError as error:
+            self.unit.status = ops.BlockedStatus(error.status_message)
+            return
         except ValidationError as error:
             self.unit.status = ops.BlockedStatus(validation_error_message(error))
             return
@@ -131,7 +135,10 @@ class VerdaccioK8SCharm(ops.CharmBase):
     def _on_collect_unit_status(self, event: ops.CollectStatusEvent) -> None:
         """Report status from current validated inputs and workload health."""
         try:
-            load_config(self.config)
+            load_secret_backed_config(self.model, self.config, refresh=False)
+        except SecretConfigurationError as error:
+            event.add_status(ops.BlockedStatus(error.status_message))
+            return
         except ValidationError as error:
             event.add_status(ops.BlockedStatus(validation_error_message(error)))
             return

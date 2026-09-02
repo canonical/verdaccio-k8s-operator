@@ -53,12 +53,11 @@ suites:
         --container verdaccio \
         verdaccio-k8s/0 \
         /charm/bin/pebble logs verdaccio
-      sudo -H -u ubuntu juju config --model "${MODEL}" verdaccio-k8s
       sudo -H -u ubuntu juju ssh \
         --model "${MODEL}" \
         --container verdaccio \
         verdaccio-k8s/0 \
-        cat /verdaccio/conf/config.yaml
+        stat -c '%a %U:%G %n' /verdaccio/conf/config.yaml
     restore-each: |
       sudo -H -u ubuntu juju destroy-model \
         --no-prompt \

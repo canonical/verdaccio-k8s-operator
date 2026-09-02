@@ -34,16 +34,22 @@ Cite the rule ID in commit messages, PR descriptions, and review comments.
   through a coding harness record the context, considerations, decisions, and
   spec scope behind it.
 
-- **`docs/code-standards/operator.md`** (813 lines) — the core rules for this
+- **`docs/code-standards/operator.md`** (910 lines) — the core rules for this
   repo. Read the whole file once; re-read the specific rule when you touch its
   area.
+
+  Structure:
+  - `cs:operator.structure.module_cohesion` — one cohesive reason to change per
+    module; reassess boundaries after every feature change
+  - `cs:operator.structure.concise_module_names` — shortest unambiguous names
+    without import collisions
 
   Configuration & schema boundary:
   - `cs:operator.configuration.schema_boundary` — all untrusted config crosses one Pydantic boundary
   - `cs:operator.configuration.closed_immutable_models` — `ConfigDict(extra="forbid", frozen=True)`
   - `cs:operator.configuration.semantic_types` — constrained fields, `Literal`, model validators
   - `cs:operator.configuration.source_adapters` — adapters produce plain mappings; models never touch the framework
-  - `cs:operator.configuration.secrets` — `SecretStr` in memory, revealed only at the output boundary
+  - `cs:operator.configuration.secrets` — native secret options and `SecretStr` values revealed only at output boundaries
   - `cs:operator.configuration.output_serialization` — explicit serializers returning `dict[str, str]`
   - `cs:operator.configuration.precedence` — one assembly function, documented precedence
   - `cs:operator.configuration.validation_failure` — `ValidationError` → concise `BlockedStatus`
@@ -65,6 +71,8 @@ Cite the rule ID in commit messages, PR descriptions, and review comments.
   Execution & testing:
   - `cs:operator.execution.argv_commands` — argv, never string-concatenated shell
   - `cs:operator.testing.event_transitions` — assert observable transitions via the Ops testing context
+  - `cs:operator.testing.layer_coverage` — every behavior change has Ops unit
+    and packed-charm Spread integration coverage
   - `cs:operator.testing.convergence` — every reconciled resource has a run-twice, no-op-second-time test
 
 ### `docs/tools/` — upstream reference corpora
@@ -162,9 +170,11 @@ Four rules the environment imposes; the runbook explains why each exists:
 1. **Standards beat habit.** When `docs/code-standards/` and a familiar pattern
    disagree, the standard wins. When two standards appear to conflict, say so
    explicitly rather than picking silently.
-2. **Reference before invention.** Check `docs/tools/` for the real API
-   signature or config key instead of guessing at Ops, Pydantic, or Verdaccio
-   behavior.
+2. **Always verify references.** Before writing code, double-check every Ops,
+   Pydantic, Verdaccio, Workshop, and charm metadata API or configuration
+   assumption against the relevant `docs/tools/` entry; never rely on memory or
+   surrounding code alone. If the corpus has no applicable entry, follow its
+   upstream `Source:` link or another authoritative primary source.
 3. **Cite rule IDs.** Reference `cs:...` IDs in commits, PRs, and review notes
    so decisions stay traceable.
 4. **Never auto-commit.** Make the edits and stop. Run `git commit` or

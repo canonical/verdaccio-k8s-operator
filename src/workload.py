@@ -5,7 +5,7 @@ from urllib.parse import urlsplit
 
 import ops
 
-from configuration import CharmConfig, TracingConfig
+from config import CharmConfig, TracingConfig
 
 CONTAINER_NAME = "verdaccio"
 SERVICE_NAME = "verdaccio"
@@ -179,17 +179,29 @@ class VerdaccioWorkload:
             raise WorkloadUnavailableError(str(error)) from error
 
     def _sync_config(self, desired: str) -> bool:
+        current_info: ops.pebble.FileInfo | None = None
         if self._container.exists(CONFIG_PATH):
+            current_info = self._container.list_files(CONFIG_PATH)[0]
             with self._container.pull(CONFIG_PATH) as stream:
                 current = stream.read()
         else:
             current = None
 
-        if current == desired:
+        content_changed = current != desired
+        metadata_changed = current_info is None or (
+            current_info.permissions != 0o600 or current_info.user_id != WORKLOAD_USER_ID
+        )
+        if not content_changed and not metadata_changed:
             return False
 
-        self._container.push(CONFIG_PATH, desired, make_dirs=True, permissions=0o644)
-        return True
+        self._container.push(
+            CONFIG_PATH,
+            desired,
+            make_dirs=True,
+            permissions=0o600,
+            user_id=WORKLOAD_USER_ID,
+        )
+        return content_changed
 
     def _sync_layer(self, plan: WorkloadPlan) -> tuple[bool, bool]:
         current_plan = self._container.get_plan()

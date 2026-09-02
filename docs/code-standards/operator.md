@@ -4,6 +4,68 @@ Standards for Python operator and charm development.
 
 > **Scope:** Event-driven operators built with the Ops framework and Pydantic 2.
 
+## cs:operator.structure.module_cohesion
+
+Each module must own one cohesive reason to change, every feature change must review whether touched names and boundaries remain accurate, and independently evolving framework adapters, validated models, pure planning, workload effects, and event orchestration should be separated by responsibility rather than file size without one-symbol pass-through modules, because accumulating unrelated responsibilities makes behavior and tests harder to reason about.
+
+### Do
+
+Keep orchestration thin and delegate a complete concern to a named module
+
+```python
+# secret_config.py
+def load_secret_backed_config(model, raw_config, *, refresh=True) -> CharmConfig:
+    validated = load_config(raw_config)
+    secret_input = _resolve_secret_input(model, raw_config, refresh=refresh)
+    return _apply_secret_config(validated, _load_secret_config(secret_input))
+
+
+# charm.py
+def _reconcile(self, event) -> None:
+    config = load_secret_backed_config(self.model, self.config)
+    self._apply(build_plan(config))
+```
+
+### Don't
+
+Grow an event module into a second schema, source adapter, planner, and effect layer
+
+```python
+def _on_config_changed(self, event) -> None:
+    secret = self.model.get_secret(id=self.config["secret-id"]).get_content()
+    parsed = yaml.safe_load(self.config["app-config"])
+    rendered = render(parsed, secret)
+    self.container.push("/etc/app.yaml", rendered)
+    self.container.restart("app")
+```
+
+---
+
+## cs:operator.structure.concise_module_names
+
+Module names must use the shortest unambiguous domain nouns that still identify their responsibility, preferring conventional names such as `config.py` and focused compounds such as `secret_config.py` while avoiding verbose restatements and import collisions, because package location already supplies context and repeated words add noise to every import.
+
+### Do
+
+Use concise names that preserve the module's distinguishing responsibility
+
+```python
+from config import load_config
+from secret_config import load_secret_backed_config
+```
+
+### Don't
+
+Repeat context in long names or choose a short name that shadows a standard module
+
+```python
+from operator_runtime_configuration import load_config
+# src/secrets.py
+from secrets import load_secret_backed_config  # Bad: shadows Python's secrets module
+```
+
+---
+
 ## cs:operator.configuration.schema_boundary
 
 All untrusted configuration must cross a Pydantic model boundary before business logic or reconciliation uses it, because a single typed boundary prevents validation, defaults, and normalization from being duplicated throughout event handlers.
@@ -153,11 +215,19 @@ class OperatorConfig(BaseModel):
 
 ## cs:operator.configuration.secrets
 
-Secret identifiers must be resolved at the input boundary, represented with `SecretStr` while in memory, and revealed only in the final workload or relation payload; code must not log, interpolate into status messages, or persist secret values in operator state, because those surfaces are routinely exposed to users and diagnostics.
+User-provided secret references must be declared as native `secret` configuration options without defaults, resolved at the input boundary, represented with `SecretStr` while in memory, and revealed only in the final workload or relation payload; code must not use a plain `string` option for a secret URI, log secret identifiers or values, interpolate them into status messages, or persist values in operator state, because those surfaces are routinely exposed to users and diagnostics.
 
 ### Do
 
-Keep resolved values redacted until the output boundary
+Declare native secret options and keep resolved values redacted until the output boundary
+
+```yaml
+config:
+  options:
+    credentials:
+      type: secret
+      description: Juju secret containing workload credentials.
+```
 
 ```python
 from pydantic import BaseModel, ConfigDict, SecretStr
@@ -182,6 +252,8 @@ def workload_environment(credentials: Credentials) -> dict[str, str]:
 Treat secret references as values or expose resolved content
 
 ```python
+# Bad charm metadata uses `type: string` for the secret URI.
+
 password = charm.config["password"]
 logger.info("Using password %s", password)  # Bad: leaks a secret or secret ID
 stored_state.password = password            # Bad: persists sensitive material
@@ -777,6 +849,31 @@ def test_reconcile_calls_render(mocker):
     charm._render.return_value = "config"
     charm._reconcile(mocker.Mock())
     charm._render.assert_called_once()  # Bad: no state transition is verified
+```
+
+---
+
+## cs:operator.testing.layer_coverage
+
+Every operator behavior change must be covered by fast Ops-scenario unit tests for event transitions and edge cases and by a Spread integration task against the packed charm for the complete deployed story, with another integration framework introduced only when Spread cannot exercise a required boundary and this standard is revised, because unit-only results do not prove Juju wiring or packaging while duplicate deployment harnesses drift without adding distinct evidence.
+
+### Do
+
+Prove the changed contract in unit and deployed integration tests
+
+```python
+# tests/unit/test_secret_config.py: missing, valid, rotated, and converged states
+# spread/integration/secret_config/task.yaml: rotate a real Juju secret
+```
+
+### Don't
+
+Stop at unit coverage or duplicate the Spread story in another deployment harness
+
+```python
+def test_helper_parses_secret():
+    assert parse_secret("token=value") == {"token": "value"}
+    # Bad: no packed-charm Spread task proves Juju secret behavior.
 ```
 
 ---

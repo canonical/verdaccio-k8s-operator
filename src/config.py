@@ -40,6 +40,16 @@ def _as_tuple(value: object) -> object:
 
 
 StringSequence = Annotated[tuple[str, ...], BeforeValidator(_as_tuple)]
+
+
+def _require_secret_value(value: object) -> object:
+    """Reject credentials that did not cross the Juju secret boundary."""
+    if value is None or isinstance(value, SecretStr):
+        return value
+    raise ValueError("must be supplied by a Juju secret option")
+
+
+SecretValue = Annotated[SecretStr, BeforeValidator(_require_secret_value)]
 WORKLOAD_PLUGINS_PATH = "/verdaccio/plugins"
 
 
@@ -96,7 +106,7 @@ class UplinkAuth(ConfigModel):
     """Bearer or basic credentials for an uplink."""
 
     type: Literal["Bearer", "Basic", "bearer", "basic"]
-    token: SecretStr | None = None
+    token: SecretValue | None = None
     token_env: bool | str | None = None
 
     @field_serializer("token")
@@ -208,7 +218,7 @@ class HttpsPfx(ConfigModel):
     """PKCS#12 HTTPS certificate settings."""
 
     pfx: str = Field(min_length=1)
-    passphrase: SecretStr | None = None
+    passphrase: SecretValue | None = None
 
     @field_serializer("passphrase")
     def serialize_passphrase(self, passphrase: SecretStr | None) -> str | None:
@@ -224,7 +234,14 @@ class NotificationConfig(ConfigModel):
     package_pattern: str | None = Field(default=None, alias="packagePattern")
     package_pattern_flags: str | None = Field(default=None, alias="packagePatternFlags")
     method: str | None = Field(default=None, min_length=1)
-    headers: dict[str, str] | None = None
+    headers: dict[str, SecretValue] | None = None
+
+    @field_serializer("headers")
+    def serialize_headers(self, headers: dict[str, SecretValue] | None) -> dict[str, str] | None:
+        """Reveal webhook headers only at the workload output boundary."""
+        if headers is None:
+            return None
+        return {name: value.get_secret_value() for name, value in headers.items()}
 
 
 class LegacyAuthCache(ConfigModel):
@@ -451,7 +468,7 @@ def config_input(config: Mapping[str, object]) -> dict[str, object]:
 
 
 def load_config(config: Mapping[str, object]) -> CharmConfig:
-    """Validate the complete current configuration snapshot."""
+    """Validate the complete current public configuration snapshot."""
     return CharmConfig.model_validate(config_input(config))
 
 

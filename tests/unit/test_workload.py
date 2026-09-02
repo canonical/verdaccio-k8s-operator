@@ -11,6 +11,23 @@ from charm import STORAGE_NAME, VerdaccioK8SCharm
 from workload import CONFIG_PATH, HEALTH_CHECK_NAME, SERVICE_NAME, WORKLOAD_USER_ID
 
 
+def _file_info_with_owner(
+    info: pebble.FileInfo, *, permissions: int, user_id: int
+) -> pebble.FileInfo:
+    return pebble.FileInfo(
+        path=info.path,
+        name=info.name,
+        type=info.type,
+        size=info.size,
+        permissions=permissions,
+        last_modified=info.last_modified,
+        user_id=user_id,
+        user=info.user,
+        group_id=info.group_id,
+        group=info.group,
+    )
+
+
 def test_pebble_ready_converges_workload() -> None:
     ctx = testing.Context(VerdaccioK8SCharm)
     container = testing.Container("verdaccio", can_connect=True)
@@ -179,6 +196,70 @@ def test_upgrade_charm_adds_health_check(tmp_path: Path) -> None:
     assert upgraded.unit_status == testing.ActiveStatus()
 
 
+def test_upgrade_charm_repairs_config_metadata_once(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    ctx = testing.Context(VerdaccioK8SCharm)
+    config_dir = tmp_path / "conf"
+    config_dir.mkdir()
+    container = testing.Container(
+        "verdaccio",
+        can_connect=True,
+        mounts={"config": testing.Mount(location="/verdaccio/conf", source=config_dir)},
+    )
+    storage = testing.Storage(STORAGE_NAME)
+    started = ctx.run(
+        ctx.on.pebble_ready(container),
+        testing.State(containers={container}, storages={storage}),
+    )
+    config_path = config_dir / "config.yaml"
+    config_path.chmod(0o644)
+    fixed_time = 1_700_000_000_000_000_000
+    os.utime(config_path, ns=(fixed_time, fixed_time))
+
+    metadata_checks = 0
+    original_list_files = ops.Container.list_files
+
+    def report_metadata(
+        container: ops.Container,
+        path: str,
+        *,
+        pattern: str | None = None,
+        itself: bool = False,
+    ) -> list[pebble.FileInfo]:
+        nonlocal metadata_checks
+        infos = original_list_files(container, path, pattern=pattern, itself=itself)
+        if path != CONFIG_PATH:
+            return infos
+        metadata_checks += 1
+        if metadata_checks == 1:
+            return [_file_info_with_owner(infos[0], permissions=0o644, user_id=0)]
+        return [_file_info_with_owner(infos[0], permissions=0o600, user_id=WORKLOAD_USER_ID)]
+
+    restart_calls: list[tuple[str, ...]] = []
+    original_restart = ops.Container.restart
+
+    def record_restart(container: ops.Container, *service_names: str) -> None:
+        restart_calls.append(service_names)
+        original_restart(container, *service_names)
+
+    monkeypatch.setattr(ops.Container, "list_files", report_metadata)
+    monkeypatch.setattr(ops.Container, "restart", record_restart)
+    upgraded = ctx.run(ctx.on.upgrade_charm(), started)
+
+    assert config_path.stat().st_mode & 0o777 == 0o600
+    assert config_path.stat().st_mtime_ns != fixed_time
+    assert restart_calls == []
+
+    converged_time = 1_700_000_100_000_000_000
+    os.utime(config_path, ns=(converged_time, converged_time))
+    converged = ctx.run(ctx.on.config_changed(), upgraded)
+
+    assert config_path.stat().st_mtime_ns == converged_time
+    assert converged.containers == upgraded.containers
+    assert restart_calls == []
+
+
 def test_reconciliation_is_convergent(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     ctx = testing.Context(VerdaccioK8SCharm)
     config_dir = tmp_path / "conf"
@@ -200,6 +281,19 @@ def test_reconciliation_is_convergent(tmp_path: Path, monkeypatch: pytest.Monkey
     pebble_calls: list[str] = []
     original_add_layer = ops.Container.add_layer
     original_replan = ops.Container.replan
+    original_list_files = ops.Container.list_files
+
+    def report_desired_metadata(
+        container: ops.Container,
+        path: str,
+        *,
+        pattern: str | None = None,
+        itself: bool = False,
+    ) -> list[pebble.FileInfo]:
+        infos = original_list_files(container, path, pattern=pattern, itself=itself)
+        if path != CONFIG_PATH:
+            return infos
+        return [_file_info_with_owner(infos[0], permissions=0o600, user_id=WORKLOAD_USER_ID)]
 
     def record_add_layer(
         container: ops.Container,
@@ -215,6 +309,7 @@ def test_reconciliation_is_convergent(tmp_path: Path, monkeypatch: pytest.Monkey
         pebble_calls.append("replan")
         original_replan(container)
 
+    monkeypatch.setattr(ops.Container, "list_files", report_desired_metadata)
     monkeypatch.setattr(ops.Container, "add_layer", record_add_layer)
     monkeypatch.setattr(ops.Container, "replan", record_replan)
     second = ctx.run(ctx.on.config_changed(), first)

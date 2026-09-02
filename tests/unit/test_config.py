@@ -6,7 +6,8 @@ import yaml
 from ops import pebble, testing
 
 from charm import STORAGE_NAME, VerdaccioK8SCharm
-from configuration import WORKLOAD_PLUGINS_PATH
+from config import WORKLOAD_PLUGINS_PATH
+from secret_config import PFX_PASSPHRASE_SECRET_OPTION
 from workload import CONFIG_PATH, HEALTH_CHECK_NAME, SERVICE_NAME
 
 
@@ -265,7 +266,7 @@ uplinks:
     https_proxy: https://proxy.example.test
     no_proxy: localhost,127.0.0.1
     headers: {X-Registry: primary}
-    auth: {type: bearer, token: secret-token, token_env: false}
+    auth: {type: bearer, token_env: false}
     strict_ssl: true
     agent_options: {keepAlive: true}
 packages:
@@ -316,7 +317,6 @@ notifications:
   packagePattern: '^@example/'
   packagePatternFlags: i
   method: POST
-  headers: {Authorization: token}
 notify:
   - endpoint: https://hooks.example.test/audit
     content: '{{ name }}'
@@ -402,17 +402,25 @@ i18n: {web: en-US}
 def test_pfx_passphrase_is_serialized_to_workload() -> None:
     ctx = testing.Context(VerdaccioK8SCharm)
     container = testing.Container("verdaccio", can_connect=True)
-    source = "pfx: /verdaccio/storage/server.pfx\npassphrase: secret\n"
+    secret = testing.Secret({"passphrase": "secret"})
+    source = "pfx: /verdaccio/storage/server.pfx\n"
 
     output = ctx.run(
         ctx.on.config_changed(),
         testing.State(
-            config={"https-config": source},
+            config={
+                "https-config": source,
+                PFX_PASSPHRASE_SECRET_OPTION: secret.id,
+            },
             containers={container},
             storages={testing.Storage(STORAGE_NAME)},
+            secrets={secret},
         ),
     )
 
     workload = output.get_container("verdaccio")
     rendered = (workload.get_filesystem(ctx) / CONFIG_PATH.lstrip("/")).read_text()
-    assert yaml.safe_load(rendered)["https"] == yaml.safe_load(source)
+    assert yaml.safe_load(rendered)["https"] == {
+        "pfx": "/verdaccio/storage/server.pfx",
+        "passphrase": "secret",
+    }

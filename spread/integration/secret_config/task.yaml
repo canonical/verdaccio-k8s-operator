@@ -1,0 +1,161 @@
+summary: Juju secrets configure and rotate credentials without exposing them
+
+execute: |
+  set +x
+  source "${SPREAD_PATH}/spread/integration/helpers.sh"
+
+  UPLINK_TOKEN=spread-uplink-token
+  ROTATED_UPLINK_TOKEN=spread-rotated-uplink-token
+  WEBHOOK_TOKEN=spread-webhook-token
+  PFX_PASSPHRASE=spread-pfx-passphrase
+
+  UPLINK_SECRET="$(sudo -H -u ubuntu juju add-secret \
+    --model "${MODEL}" \
+    spread-uplink-tokens \
+    "tokens=npmjs: ${UPLINK_TOKEN}")"
+  WEBHOOK_CREDENTIALS=$'notifications:\n  Authorization: Bearer spread-webhook-token\nnotify:\n  https://hooks.example.test/audit:\n    X-Webhook-Key: spread-webhook-token'
+  WEBHOOK_SECRET="$(sudo -H -u ubuntu juju add-secret \
+    --model "${MODEL}" \
+    spread-webhook-credentials \
+    "credentials=${WEBHOOK_CREDENTIALS}")"
+  PFX_SECRET="$(sudo -H -u ubuntu juju add-secret \
+    --model "${MODEL}" \
+    spread-pfx-passphrase \
+    "passphrase=${PFX_PASSPHRASE}")"
+
+  for SECRET_ID in "${UPLINK_SECRET}" "${WEBHOOK_SECRET}" "${PFX_SECRET}"; do
+    sudo -H -u ubuntu juju grant-secret \
+      --model "${MODEL}" \
+      "${SECRET_ID}" \
+      verdaccio-k8s
+  done
+
+  UPLINKS_CONFIG=$'npmjs:\n  url: https://registry.npmjs.org/\n  auth:\n    type: bearer'
+  NOTIFICATIONS_CONFIG=$'endpoint: https://hooks.example.test/packages\ncontent: published'
+  NOTIFY_CONFIG=$'endpoint: https://hooks.example.test/audit\ncontent: audit'
+  HTTPS_CONFIG=$'pfx: /verdaccio/storage/server.pfx'
+  sudo -H -u ubuntu juju config \
+    --model "${MODEL}" \
+    verdaccio-k8s \
+    "uplinks-config=${UPLINKS_CONFIG}" \
+    "notifications-config=${NOTIFICATIONS_CONFIG}" \
+    "notify-config=${NOTIFY_CONFIG}" \
+    "https-config=${HTTPS_CONFIG}" \
+    "uplink-tokens-secret-id=${UPLINK_SECRET}" \
+    "webhook-credentials-secret-id=${WEBHOOK_SECRET}" \
+    "pfx-passphrase-secret-id=${PFX_SECRET}"
+  sudo -H -u ubuntu env JUJU_MODEL="${MODEL}" juju wait-for \
+    application verdaccio-k8s \
+    --query='status=="active"' \
+    --timeout 2m
+
+  secret_configured=false
+  for _ in {1..60}; do
+    if RENDERED_CONFIG="$(read_config)"; then
+      case "${RENDERED_CONFIG}" in
+        *"token: ${UPLINK_TOKEN}"*"passphrase: ${PFX_PASSPHRASE}"*"Authorization: Bearer ${WEBHOOK_TOKEN}"*"X-Webhook-Key: ${WEBHOOK_TOKEN}"*)
+          secret_configured=true
+          break
+          ;;
+      esac
+    fi
+    sleep 2
+  done
+  test "${secret_configured}" = true
+  FILE_METADATA="$(sudo -H -u ubuntu juju ssh \
+    --model "${MODEL}" \
+    --container verdaccio \
+    verdaccio-k8s/0 \
+    stat -c '%a:%u' /verdaccio/conf/config.yaml)"
+  test "${FILE_METADATA}" = "600:584792"
+
+  sudo -H -u ubuntu juju ssh \
+    --model "${MODEL}" \
+    --container verdaccio \
+    verdaccio-k8s/0 \
+    chmod 0644 /verdaccio/conf/config.yaml
+  FILE_METADATA="$(sudo -H -u ubuntu juju ssh \
+    --model "${MODEL}" \
+    --container verdaccio \
+    verdaccio-k8s/0 \
+    stat -c '%a:%u' /verdaccio/conf/config.yaml)"
+  test "${FILE_METADATA}" = "644:584792"
+
+  sudo -H -u ubuntu juju refresh \
+    --model "${MODEL}" \
+    verdaccio-k8s \
+    --path "${CHARM}" \
+    --resource "verdaccio-image=${IMAGE}"
+  sudo -H -u ubuntu env JUJU_MODEL="${MODEL}" juju wait-for \
+    application verdaccio-k8s \
+    --query='status=="active"' \
+    --timeout 2m
+
+  metadata_repaired=false
+  for _ in {1..60}; do
+    FILE_METADATA="$(sudo -H -u ubuntu juju ssh \
+      --model "${MODEL}" \
+      --container verdaccio \
+      verdaccio-k8s/0 \
+      stat -c '%a:%u' /verdaccio/conf/config.yaml)"
+    if [ "${FILE_METADATA}" = "600:584792" ]; then
+      metadata_repaired=true
+      break
+    fi
+    sleep 2
+  done
+  test "${metadata_repaired}" = true
+
+  PUBLIC_CONFIG="$(sudo -H -u ubuntu juju config --model "${MODEL}" verdaccio-k8s)"
+  STATUS_OUTPUT="$(sudo -H -u ubuntu juju status --model "${MODEL}" --color=false)"
+  LOG_OUTPUT="$(sudo -H -u ubuntu juju debug-log \
+    --model "${MODEL}" \
+    --no-tail \
+    --include verdaccio-k8s/0)"
+  for CREDENTIAL in \
+    "${UPLINK_TOKEN}" \
+    "${WEBHOOK_TOKEN}" \
+    "${PFX_PASSPHRASE}"; do
+    case "${PUBLIC_CONFIG}${STATUS_OUTPUT}${LOG_OUTPUT}" in
+      *"${CREDENTIAL}"*)
+        echo "A credential was exposed outside the workload configuration"
+        exit 1
+        ;;
+    esac
+  done
+
+  sudo -H -u ubuntu juju update-secret \
+    --model "${MODEL}" \
+    "${UPLINK_SECRET}" \
+    "tokens=npmjs: ${ROTATED_UPLINK_TOKEN}"
+
+  secret_rotated=false
+  for _ in {1..60}; do
+    if RENDERED_CONFIG="$(read_config)"; then
+      case "${RENDERED_CONFIG}" in
+        *"token: ${ROTATED_UPLINK_TOKEN}"*)
+          case "${RENDERED_CONFIG}" in
+            *"token: ${UPLINK_TOKEN}"*) ;;
+            *)
+              secret_rotated=true
+              break
+              ;;
+          esac
+          ;;
+      esac
+    fi
+    sleep 2
+  done
+  test "${secret_rotated}" = true
+  ping_registry 4873
+
+  ROTATED_LOG_OUTPUT="$(sudo -H -u ubuntu juju debug-log \
+    --model "${MODEL}" \
+    --no-tail \
+    --include verdaccio-k8s/0)"
+  case "${ROTATED_LOG_OUTPUT}" in
+    *"${ROTATED_UPLINK_TOKEN}"*)
+      echo "The rotated credential was exposed in charm logs"
+      exit 1
+      ;;
+  esac

@@ -99,7 +99,13 @@ config:
         max_fails, fail_timeout, http_proxy, https_proxy, no_proxy, headers,
         auth, strict_ssl, and agent_options. Interval fields accept duration
         strings or numbers interpreted as seconds. Auth fields: type (bearer
-        or basic), token, and token_env.
+        or basic) and token_env. Supply auth tokens with uplink-tokens-secret-id.
+    uplink-tokens-secret-id:
+      type: secret
+      description: |
+        ID of a Juju secret containing a tokens key. The key's value must be a
+        YAML mapping from each configured uplink name to its authentication
+        token. Grant the deployed application access to the secret.
     packages-config:
       type: string
       default: |
@@ -163,8 +169,14 @@ config:
       default: ""
       description: |
         YAML mapping for https, without a top-level https key. Use key, cert,
-        and optional ca for PEM files, or pfx and optional passphrase for
-        PKCS#12.
+        and optional ca for PEM files, or pfx for PKCS#12. Supply the PKCS#12
+        passphrase with pfx-passphrase-secret-id.
+    pfx-passphrase-secret-id:
+      type: secret
+      description: |
+        ID of a Juju secret containing the passphrase key for the PKCS#12 file
+        configured by https-config. Grant the deployed application access to
+        the secret.
     user-agent:
       type: string
       default: ""
@@ -198,15 +210,23 @@ config:
       default: ""
       description: |
         YAML mapping for notifications, without a top-level notifications key.
-        Fields: endpoint, content, packagePattern, packagePatternFlags, method,
-        and headers.
+        Fields: endpoint, content, packagePattern, packagePatternFlags, and
+        method. Supply HTTP headers with webhook-credentials-secret-id.
     notify-config:
       type: string
       default: ""
       description: |
         YAML mapping or sequence for notify, without a top-level notify key.
         Each webhook accepts endpoint, content, packagePattern,
-        packagePatternFlags, method, and headers.
+        packagePatternFlags, and method. Supply HTTP headers with
+        webhook-credentials-secret-id.
+    webhook-credentials-secret-id:
+      type: secret
+      description: |
+        ID of a Juju secret containing a credentials key. The key's value must
+        be YAML with optional notifications headers and a notify mapping from
+        configured endpoint URLs to headers. Grant the deployed application
+        access to the secret.
     middlewares-config:
       type: string
       default: |
