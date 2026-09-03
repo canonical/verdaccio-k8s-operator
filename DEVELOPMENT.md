@@ -53,6 +53,12 @@ The Workshop action runs Spread with the normal `workshop` account. Spread execu
 hook as root, so every task must source [`helpers.sh`](spread/integration/helpers.sh); it provides
 the single boundary that returns Docker, Juju, and kubectl to the account that owns their state.
 
+Continuous integration runs the same suite: the `Packed-charm integration tests` job in
+[`ci.yaml`](.github/workflows/ci.yaml) launches this Workshop on a GitHub-hosted runner with
+[`canonical/launch-workshop`](https://github.com/canonical/launch-workshop), then invokes the
+`pack-rock`, `load-rock`, `pack-charm`, and `spread` actions. `.workshop/dev.yaml` stays the only
+environment definition, so a change that breaks it breaks both paths.
+
 The workload application has its own TypeScript build and test workflow. See
 [`verdaccio-app/README.md`](verdaccio-app/README.md).
 

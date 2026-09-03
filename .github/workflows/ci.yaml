@@ -96,3 +96,52 @@ jobs:
 
       - name: Build workload
         run: pnpm build
+
+  spread:
+    name: Packed-charm integration tests
+    needs:
+      - python
+      - workload
+    runs-on: ubuntu-24.04
+    timeout-minutes: 240
+    steps:
+      - name: Check out source
+        uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
+        with:
+          ref: ${{ inputs.commit_sha || github.sha }}
+          persist-credentials: false
+
+      - name: Reclaim runner disk space
+        # Workshop provisions a 30GiB LXD storage pool that holds the Kind node,
+        # the rock build tree, and every deployed workload image.
+        run: |
+          sudo rm -rf \
+            /usr/share/dotnet \
+            /usr/local/lib/android \
+            /opt/ghc \
+            /opt/hostedtoolcache/CodeQL
+          df -h /
+
+      - name: Launch Workshop environment
+        uses: canonical/launch-workshop@b9e184e38f49808ced78e25de19483fe02484c46 # v1.0.1
+        with:
+          workshop: dev
+
+      - name: Build workload rock
+        run: workshop run --uid 0 dev -- pack-rock
+
+      - name: Load rock into Kind
+        run: workshop run dev -- load-rock
+
+      - name: Pack charm
+        run: workshop run --uid 0 dev -- pack-charm
+
+      - name: Run Spread integration suite
+        run: workshop run dev -- spread -v local:ubuntu-24.04:spread/integration/
+
+      - name: Collect environment diagnostics
+        if: failure()
+        run: |
+          workshop info dev || true
+          workshop run dev -- status || true
+          df -h /
