@@ -66,6 +66,8 @@ execute: |
       '
   }
 
+  test "$(run_in_workload stat -c '%u:%g %a' /verdaccio/storage)" = "584792:584792 755"
+
   CREATE_OUTPUT="$(run_action manage-user operation=create username=admin)"
   INITIAL_PASSWORD="$(action_result "${CREATE_OUTPUT}" password)"
   test -n "${INITIAL_PASSWORD}"

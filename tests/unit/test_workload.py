@@ -1,6 +1,8 @@
 import os
 from dataclasses import replace
+from datetime import datetime, timezone
 from pathlib import Path
+from unittest.mock import Mock
 
 import ops
 import pytest
@@ -9,11 +11,25 @@ from helpers import verdaccio_container
 from ops import pebble, testing
 
 from charm import STORAGE_NAME, VerdaccioK8SCharm
-from workload import CONFIG_PATH, HEALTH_CHECK_NAME, SERVICE_NAME, WORKLOAD_USER_ID
+from workload import (
+    CONFIG_PATH,
+    HEALTH_CHECK_NAME,
+    SERVICE_NAME,
+    STORAGE_PATH,
+    STORAGE_PERMISSIONS,
+    STORAGE_PREPARE_COMMAND,
+    WORKLOAD_GROUP_ID,
+    WORKLOAD_USER_ID,
+    VerdaccioWorkload,
+)
 
 
 def _file_info_with_owner(
-    info: pebble.FileInfo, *, permissions: int, user_id: int
+    info: pebble.FileInfo,
+    *,
+    permissions: int,
+    user_id: int,
+    group_id: int | None = None,
 ) -> pebble.FileInfo:
     return pebble.FileInfo(
         path=info.path,
@@ -24,7 +40,7 @@ def _file_info_with_owner(
         last_modified=info.last_modified,
         user_id=user_id,
         user=info.user,
-        group_id=info.group_id,
+        group_id=info.group_id if group_id is None else group_id,
         group=info.group,
     )
 
@@ -44,6 +60,7 @@ def test_pebble_ready_converges_workload() -> None:
         "verdaccio --config /verdaccio/conf/config.yaml --listen http://0.0.0.0:4873"
     )
     assert workload.plan.services[SERVICE_NAME].user_id == WORKLOAD_USER_ID
+    assert workload.plan.services[SERVICE_NAME].group_id == WORKLOAD_GROUP_ID
     assert workload.plan.services[SERVICE_NAME].environment == {
         "HOME": "/opt/verdaccio",
         "NODE_OPTIONS": "--require /opt/verdaccio-app/dist/instrumentation.js",
@@ -66,6 +83,41 @@ def test_pebble_ready_converges_workload() -> None:
     assert rendered["storage"] == "/verdaccio/storage"
     assert rendered["plugins"] == "/verdaccio/plugins"
     assert rendered["middlewares"]["metrics"] == {"excludePaths": ["/-/ping"]}
+
+
+def test_storage_ownership_is_repaired_once() -> None:
+    container = Mock(spec=ops.Container)
+    root_owned = pebble.FileInfo(
+        path=STORAGE_PATH,
+        name="storage",
+        type=pebble.FileType.DIRECTORY,
+        size=0,
+        permissions=STORAGE_PERMISSIONS,
+        last_modified=datetime(2026, 1, 1, tzinfo=timezone.utc),
+        user_id=0,
+        user="root",
+        group_id=0,
+        group="root",
+    )
+    workload_owned = _file_info_with_owner(
+        root_owned,
+        permissions=STORAGE_PERMISSIONS,
+        user_id=WORKLOAD_USER_ID,
+        group_id=WORKLOAD_GROUP_ID,
+    )
+    container.exists.return_value = True
+    container.list_files.side_effect = [[root_owned], [workload_owned]]
+    workload = VerdaccioWorkload(container)
+
+    workload.prepare_storage()
+    workload.prepare_storage()
+
+    container.exec.assert_called_once_with(
+        list(STORAGE_PREPARE_COMMAND),
+        timeout=30,
+        working_dir="/opt/verdaccio",
+    )
+    container.exec.return_value.wait.assert_called_once_with()
 
 
 @pytest.mark.parametrize(
@@ -273,7 +325,14 @@ def test_upgrade_charm_repairs_config_metadata_once(
         metadata_checks += 1
         if metadata_checks == 1:
             return [_file_info_with_owner(infos[0], permissions=0o644, user_id=0)]
-        return [_file_info_with_owner(infos[0], permissions=0o600, user_id=WORKLOAD_USER_ID)]
+        return [
+            _file_info_with_owner(
+                infos[0],
+                permissions=0o600,
+                user_id=WORKLOAD_USER_ID,
+                group_id=WORKLOAD_GROUP_ID,
+            )
+        ]
 
     restart_calls: list[tuple[str, ...]] = []
     original_restart = ops.Container.restart
@@ -331,7 +390,14 @@ def test_reconciliation_is_convergent(tmp_path: Path, monkeypatch: pytest.Monkey
         infos = original_list_files(container, path, pattern=pattern, itself=itself)
         if path != CONFIG_PATH:
             return infos
-        return [_file_info_with_owner(infos[0], permissions=0o600, user_id=WORKLOAD_USER_ID)]
+        return [
+            _file_info_with_owner(
+                infos[0],
+                permissions=0o600,
+                user_id=WORKLOAD_USER_ID,
+                group_id=WORKLOAD_GROUP_ID,
+            )
+        ]
 
     def record_add_layer(
         container: ops.Container,

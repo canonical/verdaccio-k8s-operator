@@ -12,10 +12,28 @@ SERVICE_NAME = "verdaccio"
 HEALTH_CHECK_NAME = "verdaccio-ready"
 HEALTH_CHECK_PATH = "/-/ping"
 CONFIG_PATH = "/verdaccio/conf/config.yaml"
+STORAGE_PATH = "/verdaccio/storage"
 WORKLOAD_USER_ID = 584792
+WORKLOAD_GROUP_ID = 584792
 WORKING_DIRECTORY = "/opt/verdaccio"
 INSTRUMENTATION_PATH = "/opt/verdaccio-app/dist/instrumentation.js"
 METRICS_PATH = "/metrics"
+STORAGE_PERMISSIONS = 0o755
+STORAGE_PREPARE_COMMAND = (
+    "/bin/node",
+    "-e",
+    (
+        'const fs = require("node:fs");'
+        "const [path, uid, gid, mode] = process.argv.slice(1);"
+        "fs.mkdirSync(path, {recursive: true, mode: Number(mode)});"
+        "fs.chownSync(path, Number(uid), Number(gid));"
+        "fs.chmodSync(path, Number(mode));"
+    ),
+    STORAGE_PATH,
+    str(WORKLOAD_USER_ID),
+    str(WORKLOAD_GROUP_ID),
+    str(STORAGE_PERMISSIONS),
+)
 METRICS_PORT = 9464
 
 
@@ -119,6 +137,7 @@ def build_plan(
                 "summary": "Verdaccio npm registry",
                 "command": build_command(config),
                 "startup": "enabled",
+                "group-id": WORKLOAD_GROUP_ID,
                 "user-id": WORKLOAD_USER_ID,
                 "working-dir": WORKING_DIRECTORY,
                 "environment": environment,
@@ -142,6 +161,35 @@ class VerdaccioWorkload:
     def can_connect(self) -> bool:
         """Return whether Pebble is currently reachable."""
         return self._container.can_connect()
+
+    def prepare_storage(self) -> None:
+        """Ensure the persistent volume root is writable by the workload user."""
+        try:
+            current_info: ops.pebble.FileInfo | None = None
+            if self._container.exists(STORAGE_PATH):
+                current_info = self._container.list_files(STORAGE_PATH, itself=True)[0]
+            if current_info is not None and (
+                current_info.permissions == STORAGE_PERMISSIONS
+                and current_info.user_id == WORKLOAD_USER_ID
+                and current_info.group_id == WORKLOAD_GROUP_ID
+            ):
+                return
+            process = self._container.exec(
+                list(STORAGE_PREPARE_COMMAND),
+                timeout=30,
+                working_dir=WORKING_DIRECTORY,
+            )
+            process.wait()
+        except (
+            ops.ModelError,
+            ops.pebble.APIError,
+            ops.pebble.ChangeError,
+            ops.pebble.ConnectionError,
+            ops.pebble.ExecError,
+            ops.pebble.PathError,
+            ops.pebble.TimeoutError,
+        ) as error:
+            raise WorkloadUnavailableError(str(error)) from error
 
     def version(self) -> str | None:
         """Return the version reported by the installed Verdaccio executable, if any."""
@@ -167,6 +215,7 @@ class VerdaccioWorkload:
 
     def apply(self, plan: WorkloadPlan) -> None:
         """Apply only differences between current and desired workload state."""
+        self.prepare_storage()
         try:
             config_changed = self._sync_config(plan.config)
             service_changed, check_changed = self._sync_layer(plan)
@@ -211,7 +260,9 @@ class VerdaccioWorkload:
 
         content_changed = current != desired
         metadata_changed = current_info is None or (
-            current_info.permissions != 0o600 or current_info.user_id != WORKLOAD_USER_ID
+            current_info.permissions != 0o600
+            or current_info.user_id != WORKLOAD_USER_ID
+            or current_info.group_id != WORKLOAD_GROUP_ID
         )
         if not content_changed and not metadata_changed:
             return False
@@ -222,6 +273,7 @@ class VerdaccioWorkload:
             make_dirs=True,
             permissions=0o600,
             user_id=WORKLOAD_USER_ID,
+            group_id=WORKLOAD_GROUP_ID,
         )
         return content_changed
 

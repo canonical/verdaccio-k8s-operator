@@ -2,6 +2,8 @@ from collections.abc import Iterable, Mapping
 
 from ops import pebble, testing
 
+from workload import STORAGE_PREPARE_COMMAND
+
 
 def verdaccio_container(
     *,
@@ -13,12 +15,13 @@ def verdaccio_container(
     service_statuses: Mapping[str, pebble.ServiceStatus] | None = None,
 ) -> testing.Container:
     """Build a Verdaccio container with the workload's standard executable behavior."""
-    default_exec = testing.Exec(
-        ["verdaccio", "--version"],
-        stdout=version_stdout,
-        return_code=version_return_code,
+    default_execs = (
+        testing.Exec(
+            ["verdaccio", "--version"], stdout=version_stdout, return_code=version_return_code
+        ),
+        testing.Exec(STORAGE_PREPARE_COMMAND),
     )
-    execs_by_command = {default_exec.command_prefix: default_exec}
+    execs_by_command = {execution.command_prefix: execution for execution in default_execs}
     execs_by_command.update({execution.command_prefix: execution for execution in execs})
     return testing.Container(
         "verdaccio",

@@ -135,6 +135,11 @@ class VerdaccioK8SCharm(ops.CharmBase):
             event.fail("Verdaccio container is not ready")
             return False
         try:
+            self._workload.prepare_storage()
+        except WorkloadUnavailableError as error:
+            event.fail(str(error))
+            return False
+        try:
             if not self._management.is_running():
                 event.fail("Verdaccio service is not running")
                 return False
