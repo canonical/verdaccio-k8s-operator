@@ -10,6 +10,6 @@ permissions:
 
 jobs:
   refresh:
-    uses: canonical/launchpad-actions/.github/workflows/refresh-charm-cache.yaml@799f7ca218f01a8375713b1afb99935f9f9e272a
+    uses: canonical/launchpad-actions/.github/workflows/refresh-charm-cache.yaml@533d798d7851889a82c781a8af19bf6d8d289bb2
     with:
       charm_path: "."
