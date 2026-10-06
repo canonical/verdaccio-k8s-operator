@@ -4,7 +4,7 @@ version = "0.1.0"
 requires-python = ">=3.10"
 dependencies = [
     "cosl~=1.10",
-    "ops~=3.7",
+    "ops~=3.8",
     "pydantic~=2.12",
     "pyyaml~=6.0",
 ]
