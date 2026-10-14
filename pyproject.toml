@@ -3,7 +3,7 @@ name = "verdaccio-k8s"
 version = "0.1.0"
 requires-python = ">=3.10"
 dependencies = [
-    "cosl~=1.10",
+    "cosl~=1.11",
     "ops~=3.7",
     "pydantic~=2.12",
     "pyyaml~=6.0",
